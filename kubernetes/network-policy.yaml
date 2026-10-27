@@ -29,3 +29,5 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+        # The voice server specifies its UDP destination port during connection.
+        - protocol: UDP
