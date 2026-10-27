@@ -22,6 +22,12 @@ type FFmpeg struct {
 	slots chan struct{}
 }
 
+// Short normalization windows keep streaming startup bounded. Limit gain to 20 dB,
+// preserve quiet pauses, and disable the limiter's automatic makeup gain.
+const speechFilter = "dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.005," +
+	"acompressor=threshold=0.25:ratio=3:attack=5:release=100," +
+	"alimiter=limit=0.89:level=0:latency=1"
+
 func NewFFmpeg(path string) *FFmpeg { return &FFmpeg{Path: path, slots: make(chan struct{}, 1)} }
 func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStream, error) {
 	format := "mp3"
@@ -42,7 +48,7 @@ func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStrea
 	child, cancel := context.WithCancel(ctx)
 	// Small probe/analyze limits are sufficient for the known audio formats. One
 	// Opus packet per Ogg page + flush prevents the default one-second page wait.
-	cmd := exec.CommandContext(child, f.Path, "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-f", format, "-probesize", "4096", "-analyzeduration", "0", "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "voip", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
+	cmd := exec.CommandContext(child, f.Path, "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", format, "-probesize", "4096", "-analyzeduration", "0", "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "voip", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
 	cmd.Stdin = tts.LimitAudio(input.Stream)
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
