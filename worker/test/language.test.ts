@@ -9,7 +9,7 @@ test('kana, English and non-Han input do not invoke the classifier', async () =>
     assert.equal(await detect(text, ai), lang);
   }
 });
-test('Han-only, simplified, traditional and Chinese-English posts use a cached classification', async () => {
+test('Ambiguous Han, traditional and Chinese-English posts use a cached classification', async () => {
   const detect = createLanguageDetector();
   for (const [text, classification, lang] of [['你好，世界。','zh','zh'], ['這是中文。','zh','zh'], ['今天使用 GitHub Actions。','zh','zh'], ['東京','ja','jp'], ['了解','ja','jp']]) {
     let calls = 0;
@@ -44,4 +44,22 @@ test('slow language detection falls back without caching a late answer', async t
   let calls=0;
   assert.equal(await detect('中文', {run: async () => {calls++; return {answers: {language: {choice:'zh',confidence:0.99}}};}}), 'zh');
   assert.equal(calls, 1);
+});
+
+
+test('distinct simplified forms force Chinese even with kana, without a classifier', async () => {
+  const detect=createLanguageDetector();
+  const ai={run: async () => {assert.fail('simplified Chinese must bypass the classifier');}};
+  for(const text of ['这','你好，这是中文语音测试。','我们使用 GitHub。','学习汉语','中文の说明です。','这个是测试','软件开发','龙马精神','学习','电子','软件','空气','飞行','图形']) {
+    assert.equal(await detect(text,ai),'zh',text);
+  }
+});
+test('shared Japanese simplified forms do not force Chinese', async () => {
+  const detect=createLanguageDetector();
+  let calls=0;
+  const ai={run: async () => {calls++;return {answers:{language:{choice:'ja',confidence:0.95}}};}};
+  assert.equal(await detect('国の体制を学ぶ。簡単な単語。机に写真を置く。',ai),'jp');
+  assert.equal(calls,0);
+  assert.equal(await detect('国学体会机写后干',ai),'jp');
+  assert.equal(calls,1);
 });

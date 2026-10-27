@@ -13,9 +13,14 @@ export function languageInput(text: string): LanguageInput {
   }}};
 }
 
+// Common simplified forms distinct from ordinary Japanese shinjitai. Shared
+// characters (国, 学, 体, 会, 机, 写, etc.) must not force Chinese speech.
+const SIMPLIFIED_ONLY = /[这语说们汉简单个东马龙车风门书见听话为动对过还开关进没两则应发从众优传伤伦伪价亿仅仪伟么长务总现实时经级线结组统给绘绝续维绿编缘缩练终纸纪纯纳纲络约红远达连选边适递迁运违遗样构极权标树桥检档梦爱欢观觉记论许认计订议设访证评识诉译课谈试调谢误读请让该谁谜负财责败货质贵费资赞购贩贸贝账赢钱银铁钢钟错键镜录饭饮馆饿饱岛岁齐齿鸟鸡鱼鲜脸脑脏肠肿胶显须顾领题颜频预顶顺顿头买卖师帅币扫扬扩执护报择拥换损摄摆摇挡抢挥压厂厅历厉层备复变刘陈张赵邓孙郑吴杨苏宁宠宽审宾问闻闪闲闭闹际队阳阴阵阶陆难虽离杂业丢丧丽举义乡乌乔伞仑仓俩侧侦俭债倾偿测习电软轻轮转轴较轨辅辆输辐辖轿轰气无飞尘兴灭灵广图圆围团园兰蓝节荣莲艺苹获药营萧萨萝愿态怀忆惊忧恼惧愤惩懒]/u;
+
 export function createLanguageDetector() {
   const cache = new Map<string, 'ja' | 'zh'>();
   return async (text: string, ai: LanguageAI, japanese = 'jp'): Promise<string> => {
+    if (SIMPLIFIED_ONLY.test(text)) return 'zh';
     // Kana is a strong Japanese signal; Latin-only posts retain English speech.
     if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)) return japanese;
     const letters = text.match(/\p{Letter}/gu) || [];

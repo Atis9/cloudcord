@@ -6,7 +6,7 @@ import { createLanguageDetector } from './language.ts';
 import type { LanguageInput } from './language.ts';
 
 export interface Env {
-  AI: { run(model: string, input: { prompt: string; lang: string } | KanaInput | LanguageInput): Promise<unknown> };
+  AI: { run(model: string, input: { prompt: string; lang: string } | { text: string; speaker: 'draco'; encoding: 'mp3' } | KanaInput | LanguageInput): Promise<unknown> };
   BOT_API_TOKEN: string;
   MELOTTS_LANG: string;
   KANA_MODE?: string;
@@ -15,6 +15,7 @@ const llmKana = createLLMKanaConverter();
 const detectLanguage = createLanguageDetector();
 const MAX_AUDIO = 5 * 1024 * 1024;
 const MODEL = '@cf/myshell-ai/melotts';
+const ENGLISH_MODEL = '@cf/deepgram/aura-2-en';
 class APIError extends Error {
   status: number;
   code: string;
@@ -191,7 +192,9 @@ async function synthesize(env: Env, text: string, convertWord: WordConverter): P
       ? await llmKana(text, env.AI, convertWord) : undefined;
     const prompt = isJapanese ? kana?.text ?? japaneseText(text, convertWord) : text;
     return await Promise.race([
-      env.AI.run(MODEL, { prompt, lang }).then(async output => ({...await audioStream(output, controller.signal), kanaSource: kana?.source, language: lang === 'jp' ? 'ja' : lang})),
+      (lang === 'en'
+        ? env.AI.run(ENGLISH_MODEL, { text: prompt, speaker: 'draco', encoding: 'mp3' })
+        : env.AI.run(MODEL, { prompt, lang })).then(async output => ({...await audioStream(output, controller.signal), kanaSource: kana?.source, language: lang === 'jp' ? 'ja' : lang})),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => { controller.abort(); reject(new APIError(504, 'tts_timeout', 'TTS timed out')); }, Math.max(0, deadline - Date.now()));
       }),

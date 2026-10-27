@@ -39,17 +39,22 @@ test('real binding base64 WAV is served with its actual format and Japanese adap
   assert.equal(response.headers.get('content-type'), 'audio/wav');
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), wav);
 });
-test('English-only posts use English MeloTTS while Japanese, mixed text and numbers retain Japanese', async () => {
+test('English-only posts use British Draco while Japanese, mixed text and numbers retain MeloTTS', async () => {
   for (const [text, lang] of [
     ['Hello, this is a test.', 'en'],
     ['For workflows on GitHub Actions to authenticate with k8s.chitoku.jp, it trusts GitHub Actions through OpenID Connect.', 'en'],
     ['GitHub Actionsを使います。', 'jp'], ['こんにちは。', 'jp'], ['12345', 'jp'],
   ]) {
     let calls = 0;
-    const response = await worker.fetch(request({guild_id: '12', text, language: 'ja'}), environment(async (_, input) => {
+    const response = await worker.fetch(request({guild_id: '12', text, language: 'ja'}), environment(async (model, input) => {
       calls++;
-      assert.equal(input.lang, lang);
-      assert.equal(input.prompt, lang === 'en' ? text : text.replace('GitHub Actions', convertWord('GitHub') + ' ' + convertWord('Actions')));
+      if (lang === 'en') {
+        assert.equal(model, '@cf/deepgram/aura-2-en');
+        assert.deepEqual(input, {text, speaker:'draco', encoding:'mp3'});
+      } else {
+        assert.equal(model, '@cf/myshell-ai/melotts');
+        assert.deepEqual(input, {lang, prompt: text.replace('GitHub Actions', convertWord('GitHub') + ' ' + convertWord('Actions'))});
+      }
       return audio;
     }));
     assert.equal(response.status, 200);
@@ -173,7 +178,7 @@ test('LLM mode changes only mixed posts, using one conversion and one TTS call',
   await response.body?.cancel();
   for (const text of ['こんにちは', 'Hello world']) {
     let calls = 0;
-    const env = environment(async (model) => { calls++; assert.equal(model, '@cf/myshell-ai/melotts'); return audio; });
+    const env = environment(async (model) => { calls++; assert.equal(model, text === 'Hello world' ? '@cf/deepgram/aura-2-en' : '@cf/myshell-ai/melotts'); return audio; });
     env.KANA_MODE = 'llm';
     const response = await worker.fetch(request({guild_id: '12', text, language: 'ja'}), env);
     assert.equal(response.status, 200);
@@ -211,7 +216,7 @@ test('Chinese and Chinese-English text go unchanged to zh, without kana conversi
     assert.equal(response.status,200);
     assert.equal(response.headers.get('x-speech-language'),'zh');
     assert.equal(response.headers.get('x-kana-source'),null);
-    assert.equal(calls.length,2);
+    assert.equal(calls.length,text.includes('这') ? 1 : 2);
     await response.body?.cancel();
   }
 });
@@ -245,7 +250,7 @@ test('language detection consumes the shared 25-second synthesis budget', async 
     return new Promise(() => {});
   });
   let settled=false;
-  const response=worker.fetch(request({guild_id:'12',text:'中文共享时限测试。',language:'ja'}),env);
+  const response=worker.fetch(request({guild_id:'12',text:'中文共享時限。',language:'ja'}),env);
   void response.then(() => {settled=true;});
   await detecting;
   t.mock.timers.tick(2000);
@@ -255,4 +260,23 @@ test('language detection consumes the shared 25-second synthesis budget', async 
   assert.equal(settled,false);
   t.mock.timers.tick(1);
   assert.equal((await response).status,504);
+});
+
+
+test('simplified markers override kana and skip both language and kana inference', async () => {
+  const text = '这 API を試します。';
+  let calls=0;
+  const env=environment(async (model,input) => {
+    calls++;
+    assert.equal(model,'@cf/myshell-ai/melotts');
+    assert.deepEqual(input,{prompt:text,lang:'zh'});
+    return audio;
+  });
+  env.KANA_MODE='llm';
+  const response=await worker.fetch(request({guild_id:'12',text,language:'ja'}),env);
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('x-speech-language'),'zh');
+  assert.equal(response.headers.get('x-kana-source'),null);
+  assert.equal(calls,1);
+  await response.body?.cancel();
 });
