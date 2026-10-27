@@ -27,7 +27,7 @@ Botの設定例は [.env.example](.env.example)。秘密情報はGitHub Secrets�
 
 ## 開発
 
-Go 1.24以上、Node.js 24、C compiler、pkg-config、FFmpeg（libopus対応）が必要。
+Go 1.25以上、Node.js 24、C compiler、pkg-config、FFmpeg（libopus対応）が必要。
 
 ```sh
 ./scripts/install-libdave.sh "$HOME/.local/cloudcord-libdave"
