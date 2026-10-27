@@ -1,0 +1,14 @@
+name = "cloudcord"
+main = "src/entry.ts"
+compatibility_date = "2026-10-03"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[vars]
+# Workers AI only; no AI Gateway credits or external provider keys.
+KANA_MODE = "llm"
+# MeloTTS Japanese language identifier.
+MELOTTS_LANG = "jp"
+# BOT_API_TOKEN is provisioned by the Deploy Worker GitHub Actions workflow.

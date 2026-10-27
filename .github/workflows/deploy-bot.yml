@@ -1,0 +1,57 @@
+name: Deploy Bot
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: 'Published GHCR image digest (sha256:...)'
+        required: true
+        type: string
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+concurrency:
+  group: bot-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate image digest
+        run: '[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+      - uses: azure/setup-kubectl@e30ae091d7932a5f6919803061a96da1e82915eb # v5
+        with:
+          version: v1.33.9
+      - uses: chitoku-k/actions/setup-kubectl-context@ccb4fe0fc11aeed48083a569230cb6d9edff2c94
+        with:
+          namespace: nyantech
+      - name: Update Bot configuration
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+          DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
+          CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+          CLOUDFLARE_BOT_API_TOKEN: ${{ secrets.CLOUDFLARE_BOT_API_TOKEN }}
+        run: node scripts/kubernetes-secret.mjs | kubectl apply --server-side --field-manager=cloudcord-deploy --filename=-
+      - name: Deploy pinned image
+        run: |
+          kubectl set image --local --filename=kubernetes/deployment.yaml \
+            "cloudcord=ghcr.io/atis9/cloudcord@$IMAGE_DIGEST" --output=yaml > "$RUNNER_TEMP/deployment.yaml"
+          kubectl apply --filename="$RUNNER_TEMP/deployment.yaml"
+          kubectl rollout status deployment/cloudcord --timeout=180s
+      - name: Remove temporary kubeconfig
+        if: always()
+        run: rm -f "${KUBECONFIG:-$HOME/.kube/config}"
