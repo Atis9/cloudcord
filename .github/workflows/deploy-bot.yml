@@ -51,6 +51,25 @@ jobs:
             "cloudcord=ghcr.io/atis9/cloudcord@$IMAGE_DIGEST" --output=yaml > "$RUNNER_TEMP/deployment.yaml"
           kubectl apply --filename="$RUNNER_TEMP/deployment.yaml"
           kubectl rollout status deployment/cloudcord --timeout=180s
+      - name: Check Pod startup
+        if: always()
+        run: |
+          kubectl get pods --selector=app=cloudcord
+          for previous in '' '--previous'; do
+            kubectl logs deployment/cloudcord --tail=100 $previous 2>/dev/null | node -e '
+              let input = "";
+              process.stdin.on("data", chunk => input += chunk);
+              process.stdin.on("end", () => {
+                for (const line of input.split("\n")) {
+                  try {
+                    const {time, level, msg, error} = JSON.parse(line);
+                    if (msg === "startup_failed" || msg === "bot_running")
+                      console.log(JSON.stringify({time, level, msg, error}));
+                  } catch {}
+                }
+              });
+            ' || true
+          done
       - name: Remove temporary kubeconfig
         if: always()
         run: rm -f "${KUBECONFIG:-$HOME/.kube/config}"

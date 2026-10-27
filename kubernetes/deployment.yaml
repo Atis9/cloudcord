@@ -37,6 +37,12 @@ spec:
             capabilities:
               drop: [ALL]
             readOnlyRootFilesystem: true
+          readinessProbe:
+            exec:
+              command: [test, -f, /tmp/cloudcord-ready]
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 2
           envFrom:
             - secretRef:
                 name: cloudcord-secret

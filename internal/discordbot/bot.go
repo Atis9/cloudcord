@@ -2,7 +2,6 @@ package discordbot
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -66,7 +65,7 @@ func (b *Bot) Register(app snowflake.ID) error {
 	// Upsert these two commands without deleting unrelated commands.
 	for _, cmd := range cmds {
 		if _, err := b.Client.Rest.CreateGlobalCommand(app, cmd, rest.WithCtx(b.ctx)); err != nil {
-			return errors.New("slash command registration failed")
+			return err
 		}
 	}
 	return nil

@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"cloudcord/internal/audio"
 	"cloudcord/internal/discordbot"
 	"cloudcord/internal/tts"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 )
 
@@ -22,7 +25,13 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+const readinessPath = "/tmp/cloudcord-ready"
+
 func run() error {
+	if err := os.Remove(readinessPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("clear readiness: %w", err)
+	}
 	token := os.Getenv("DISCORD_TOKEN")
 	if token == "" {
 		return errors.New("DISCORD_TOKEN is required")
@@ -46,16 +55,39 @@ func run() error {
 	defer cancel()
 	b, err := discordbot.New(ctx, token, provider, audio.NewFFmpeg(path))
 	if err != nil {
-		return errors.New("Discord client initialization failed")
+		return startupError("Discord client initialization failed", err)
 	}
 	defer b.Close()
 	if err = b.Register(app); err != nil {
-		return err
+		return startupError("Discord command registration failed", err)
 	}
 	if err = b.Client.OpenGateway(ctx); err != nil {
-		return errors.New("Discord Gateway connection failed")
+		return startupError("Discord Gateway connection failed", err)
 	}
+	if err = os.WriteFile(readinessPath, []byte("ready\n"), 0600); err != nil {
+		return fmt.Errorf("write readiness: %w", err)
+	}
+	defer os.Remove(readinessPath)
 	slog.Info("bot_running")
 	<-ctx.Done()
 	return nil
+}
+
+// Keep useful startup failures without logging HTTP bodies or credentials.
+func startupError(stage string, err error) error {
+	var apiError *rest.Error
+	if errors.As(err, &apiError) {
+		status := 0
+		if apiError.Response != nil {
+			status = apiError.Response.StatusCode
+		}
+		return fmt.Errorf("%s: Discord HTTP %d (code %d)", stage, status, apiError.Code)
+	}
+	message := err.Error()
+	for _, name := range []string{"DISCORD_TOKEN", "CLOUDFLARE_BOT_API_TOKEN"} {
+		if value := os.Getenv(name); value != "" {
+			message = strings.ReplaceAll(message, value, "[redacted]")
+		}
+	}
+	return fmt.Errorf("%s: %s", stage, message)
 }
