@@ -56,14 +56,16 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 	b.Client = client
 	return b, nil
 }
-func (b *Bot) Register(app snowflake.ID) error {
-	permission := discord.PermissionManageGuild
-	cmds := []discord.ApplicationCommandCreate{
-		discord.SlashCommandCreate{Name: "join", Description: "参加中のボイスチャンネルで読み上げを開始", DefaultMemberPermissions: omit.New(&permission), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}, Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionChannel{Name: "text_channel", Description: "読み上げ対象（省略時は現在のテキストチャンネル）", ChannelTypes: []discord.ChannelType{discord.ChannelTypeGuildText}}}},
-		discord.SlashCommandCreate{Name: "leave", Description: "読み上げを停止して退出", DefaultMemberPermissions: omit.New(&permission), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}},
+func commandDefinitions() []discord.ApplicationCommandCreate {
+	return []discord.ApplicationCommandCreate{
+		discord.SlashCommandCreate{Name: "join", Description: "参加中のボイスチャンネルで読み上げを開始", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}, Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionChannel{Name: "text_channel", Description: "読み上げ対象（省略時は現在のテキストチャンネル）", ChannelTypes: []discord.ChannelType{discord.ChannelTypeGuildText}}}},
+		discord.SlashCommandCreate{Name: "leave", Description: "読み上げを停止して退出", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}},
 	}
+}
+
+func (b *Bot) Register(app snowflake.ID) error {
 	// Upsert these two commands without deleting unrelated commands.
-	for _, cmd := range cmds {
+	for _, cmd := range commandDefinitions() {
 		if _, err := b.Client.Rest.CreateGlobalCommand(app, cmd, rest.WithCtx(b.ctx)); err != nil {
 			return err
 		}
@@ -89,8 +91,8 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 	if b.ctx.Err() != nil {
 		return
 	}
-	if e.GuildID() == nil || e.Member() == nil || !(e.Member().Permissions.Has(discord.PermissionManageGuild) || e.Member().Permissions.Has(discord.PermissionAdministrator)) {
-		_ = e.CreateMessage(discord.MessageCreate{Content: "サーバー管理権限が必要です。", Flags: discord.MessageFlagEphemeral})
+	if e.GuildID() == nil || e.Member() == nil {
+		_ = e.CreateMessage(discord.MessageCreate{Content: "サーバー内で実行してください。", Flags: discord.MessageFlagEphemeral})
 		return
 	}
 	if err := e.DeferCreateMessage(true); err != nil {
@@ -111,6 +113,8 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		result := "読み上げを停止しました。"
 		if b.ctx.Err() != nil {
 			result = "Bot は停止中です。"
+		} else if reason := b.controlError(*e.GuildID(), e.User().ID); reason != "" {
+			result = reason
 		} else if data.CommandName() == "leave" {
 			b.leave(*e.GuildID())
 		} else {
@@ -123,6 +127,22 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		}
 	}()
 }
+
+// Caller holds the guild command lock.
+func (b *Bot) controlError(guild, user snowflake.ID) string {
+	state, ok := b.Client.Caches.VoiceState(guild, user)
+	if !ok || state.ChannelID == nil {
+		return "通常のボイスチャンネルに参加してから実行してください。"
+	}
+	b.mu.Lock()
+	current := b.sessions[guild]
+	b.mu.Unlock()
+	if current != nil && current.speech.VoiceChannelID != state.ChannelID.String() {
+		return "Bot と同じボイスチャンネルに参加してから実行してください。"
+	}
+	return ""
+}
+
 func (b *Bot) join(e *events.ApplicationCommandInteractionCreate) string {
 	guild := *e.GuildID()
 	state, ok := b.Client.Caches.VoiceState(guild, e.User().ID)
@@ -140,6 +160,12 @@ func (b *Bot) join(e *events.ApplicationCommandInteractionCreate) string {
 	tc, ok := b.Client.Caches.Channel(textID)
 	if !ok || tc.GuildID() != guild || tc.Type() != discord.ChannelTypeGuildText {
 		return "同じサーバーの通常のテキストチャンネルを指定してください。"
+	}
+	member := e.Member().Member
+	member.GuildID = guild
+	member.User = e.User()
+	if !b.Client.Caches.MemberPermissionsInChannel(tc, member).Has(discord.PermissionViewChannel) {
+		return "閲覧権限のあるテキストチャンネルを指定してください。"
 	}
 	ctx, cancel := context.WithTimeout(b.ctx, 15*time.Second)
 	defer cancel()
