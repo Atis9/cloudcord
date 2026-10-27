@@ -5,11 +5,13 @@
 ## 初回の準備
 
 1. [セットアップ](setup.md)のGitHub `production` Environmentに必要なSecrets / Variablesを設定する。
-2. クラスタ管理者が既存の `nyantech` namespaceと `nyantech-admin` Roleを確認し、RoleBindingを適用する。
+2. クラスタ管理者が既存の `nyantech` namespaceと `nyantech-admin` Roleを確認し、RoleBindingとNetworkPolicyを適用する。
 
    ```sh
-   kubectl apply -f kubernetes/role-binding.yaml
+   kubectl apply -f kubernetes/role-binding.yaml -f kubernetes/network-policy.yaml
    ```
+
+   NetworkPolicyの作成・更新にはクラスタ管理権限が必要。`Deploy Bot` はこのPolicyの存在を確認する。
 
    GitHubの `Atis9/cloudcord` リポジトリを示すOIDCグループに、このnamespaceのRoleを割り当てる。GitHub Actionsには `id-token: write` が必要。audienceは `k8s.chitoku.jp`。
 3. GHCRイメージをノードから取得できるようにする。公開リポジトリでもGHCRパッケージの公開設定は別なので確認する。privateイメージを使う場合はクラスタ側でimage pull secretを用意し、Deploymentの `imagePullSecrets` に指定する。GitHub Actionsの一時tokenを長期のpull secretにしない。
@@ -48,7 +50,7 @@ kubectl -n nyantech logs deployment/cloudcord --tail=100
 kubectl -n nyantech rollout undo deployment/cloudcord
 ```
 
-Podは非root・読み取り専用root filesystemで動作し、書き込み先はメモリ上の `/tmp` のみ。Kubernetes API tokenはマウントしない。外向きのHTTPSとDiscord音声用UDPが必要で、Service・Ingressは不要。NetworkPolicyがある場合はクラスタ側で必要な通信を許可する。
+Podは非root・読み取り専用root filesystemで動作し、書き込み先はメモリ上の `/tmp` のみ。Kubernetes API tokenはマウントしない。外向きのHTTPSとDiscord音声用UDPが必要で、Service・Ingressは不要。`kubernetes/network-policy.yaml` は `app: cloudcord` のPodに外向きTCP 443とUDPを許可する。プライベート・ループバック・リンクローカル宛てはこの許可から除外し、DNSなどnamespace内の既存許可と組み合わせる。
 
 初期リソース設定はrequest 50m CPU / 64Mi、limit 500m CPU / 256Mi。実際の利用状況に応じて調整する。再起動時はセッションと待機音声を引き継がない。
 

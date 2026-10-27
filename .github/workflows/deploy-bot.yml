@@ -38,6 +38,8 @@ jobs:
       - uses: chitoku-k/actions/setup-kubectl-context@ccb4fe0fc11aeed48083a569230cb6d9edff2c94
         with:
           namespace: nyantech
+      - name: Check Bot egress policy
+        run: kubectl get networkpolicy/cloudcord --output=name
       - name: Update Bot configuration
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
