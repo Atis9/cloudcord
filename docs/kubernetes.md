@@ -50,7 +50,7 @@ kubectl -n nyantech logs deployment/cloudcord --tail=100
 kubectl -n nyantech rollout undo deployment/cloudcord
 ```
 
-Podは非root・読み取り専用root filesystemで動作し、書き込み先はメモリ上の `/tmp` のみ。Kubernetes API tokenはマウントしない。外向きのHTTPSとDiscord音声用UDPが必要で、Service・Ingressは不要。`kubernetes/network-policy.yaml` は `app: cloudcord` のPodに外向きTCP 443とUDPを許可する。プライベート・ループバック・リンクローカル宛てはこの許可から除外し、DNSなどnamespace内の既存許可と組み合わせる。
+Podは非root・読み取り専用root filesystemで動作し、書き込み先はメモリ上の `/tmp` のみ。Kubernetes API tokenはマウントしない。外向きのHTTPSとDiscord音声用UDPが必要で、Service・Ingressは不要。`kubernetes/network-policy.yaml` は `app: cloudcord` のPodに外向きTCP 443のみを追加許可する。音声用UDPは接続先ポートを確認後、必要な範囲だけ管理者が追加する。それまではボイスチャンネルの音声接続は利用できない。プライベート・ループバック・リンクローカル宛てはこの許可から除外し、DNSなどnamespace内の既存許可と組み合わせる。
 
 初期リソース設定はrequest 50m CPU / 64Mi、limit 500m CPU / 256Mi。実際の利用状況に応じて調整する。再起動時はセッションと待機音声を引き継がない。
 

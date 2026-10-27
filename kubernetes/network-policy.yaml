@@ -29,5 +29,3 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-        # Discord supplies the destination UDP port during the voice handshake.
-        - protocol: UDP
