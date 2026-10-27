@@ -9,25 +9,29 @@ spec:
       app: cloudcord
   policyTypes: [Egress]
   egress:
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-              - 127.0.0.0/8
-              - 169.254.0.0/16
-              - 100.64.0.0/10
-        - ipBlock:
-            cidr: ::/0
-            except:
-              - ::/128
-              - ::1/128
-              - fc00::/7
-              - fe80::/10
-      ports:
-        - protocol: TCP
-          port: 443
-        # The voice server specifies its UDP destination port during connection.
-        - protocol: UDP
+    # HTTPS and Discord Gateway
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 443
+          protocol: UDP
+    # Discord voice WebSocket
+    - ports:
+        - port: 2053
+          protocol: TCP
+        - port: 2083
+          protocol: TCP
+        - port: 2087
+          protocol: TCP
+        - port: 2096
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+    # Discord voice UDP
+    - ports:
+        - port: 19294
+          endPort: 19344
+          protocol: UDP
+        - port: 50000
+          endPort: 65535
+          protocol: UDP
