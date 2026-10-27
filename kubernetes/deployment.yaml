@@ -18,6 +18,8 @@ spec:
       labels:
         app: cloudcord
     spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:

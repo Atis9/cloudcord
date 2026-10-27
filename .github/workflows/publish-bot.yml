@@ -10,55 +10,56 @@ defaults:
   run:
     shell: bash
 jobs:
-  checks:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
   publish:
-    needs: checks
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
       packages: write
+      actions: read
     env:
       REPOSITORY: ${{ github.repository }}
       COMMIT: ${{ github.sha }}
     steps:
+      - name: Find successful CI for this commit
+        id: ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id=$(gh api --method GET "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main -f head_sha="$COMMIT" -f status=success -f per_page=20 \
+            --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")][0].id // empty')
+          test -n "$run_id" || { echo 'Run CI successfully on the current main commit first.' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: bot-linux-*-${{ github.sha }}
+          name: bot-linux-amd64-${{ github.sha }}
           path: images
-          merge-multiple: true
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish verified platform images
+      - name: Publish verified amd64 image
         working-directory: images
         run: |
           image="ghcr.io/${REPOSITORY,,}"
-          for arch in amd64 arm64; do
-            test "$(cat "COMMIT-$arch")" = "$COMMIT"
-            sha256sum --check "SHA256SUMS-$arch"
-            gzip -dc "cloudcord-linux-$arch-docker.tar.gz" | docker load
-            local_image="cloudcord:sha-$COMMIT-$arch"
-            test "$(docker image inspect "$local_image" --format '{{.Architecture}}')" = "$arch"
-            docker tag "$local_image" "$image:sha-$COMMIT-$arch"
-            docker push "$image:sha-$COMMIT-$arch"
-          done
-      - name: Create multi-architecture image
-        run: |
-          image="ghcr.io/${REPOSITORY,,}"
           tag="$image:sha-$COMMIT"
-          docker buildx imagetools create --tag "$tag" \
-            "$image:sha-$COMMIT-amd64" "$image:sha-$COMMIT-arm64"
+          test "$(cat COMMIT-amd64)" = "$COMMIT"
+          sha256sum --check SHA256SUMS-amd64
+          gzip -dc cloudcord-linux-amd64-docker.tar.gz | docker load
+          local_image="cloudcord:sha-$COMMIT-amd64"
+          test "$(docker image inspect "$local_image" --format '{{.Architecture}}')" = amd64
+          docker tag "$local_image" "$tag"
+          docker push "$tag"
           docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' > "$RUNNER_TEMP/manifest.json"
-          jq -e '[.manifests[].platform.architecture] | sort == ["amd64","arm64"]' "$RUNNER_TEMP/manifest.json"
           digest=$(jq -er .digest "$RUNNER_TEMP/manifest.json")
           {
-            echo '### Bot image'
+            echo '### Bot image (linux/amd64)'
             echo
             echo "\`$image@$digest\`"
             echo

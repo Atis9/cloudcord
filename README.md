@@ -41,4 +41,10 @@ npm test
 npm run build
 ```
 
-`CI` はWorkerの型検査・テスト・ビルドと、amd64・arm64のネイティブコンテナビルド・テストを実行する。`Publish Bot` は検証済みの両アーキテクチャをGHCRのマルチアーキテクチャイメージにまとめる。WorkerとBotのデプロイは別の手動ワークフロー。
+`CI` はWorkerの型検査・テスト・ビルドと、amd64のネイティブコンテナビルド・テストを実行する。`Publish Bot` は検証済みのamd64イメージをGHCRへ配布する。WorkerとBotのデプロイは別の手動ワークフロー。
+
+arm64など別のアーキテクチャで使う場合は、対象環境でローカルビルドする。
+
+```sh
+docker build -t cloudcord:local .
+```

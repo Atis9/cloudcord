@@ -1,6 +1,6 @@
 # Kubernetesへのデプロイ
 
-構成は [arsis](https://github.com/Atis9/arsis) と [k8s.chitoku.jp](https://github.com/chitoku-k/k8s.chitoku.jp) のGitHub OIDC認証に合わせている。配置先は `nyantech` namespace。Botはamd64・arm64両対応で、ノードのアーキテクチャに合うイメージが選択される。
+構成は [arsis](https://github.com/Atis9/arsis) と [k8s.chitoku.jp](https://github.com/chitoku-k/k8s.chitoku.jp) のGitHub OIDC認証に合わせている。配置先は `nyantech` namespace。CI/CDで作成するイメージはamd64向けで、Deploymentはamd64ノードを選択する。
 
 ## 初回の準備
 
@@ -16,7 +16,7 @@
 
 ## イメージの作成
 
-`Publish Bot` を `main` から手動実行する。Workerと、両アーキテクチャのBotを検証し、GHCRに `sha-<commit>` のイメージを作成する。成功時のSummaryに、マルチアーキテクチャイメージのdigestを表示する。
+`CI` の成功後、`Publish Bot` を `main` から手動実行する。同じコミットの成功したCIが生成したamd64イメージを再利用し、GHCRに `sha-<commit>` のイメージを作成する。成功時のSummaryに、イメージのdigestを表示する。CI成果物の保存期間は7日。期限切れの場合は同じ `main` でCIを再実行してから配布する。
 
 ## デプロイ
 
@@ -51,3 +51,5 @@ kubectl -n nyantech rollout undo deployment/cloudcord
 Podは非root・読み取り専用root filesystemで動作し、書き込み先はメモリ上の `/tmp` のみ。Kubernetes API tokenはマウントしない。外向きのHTTPSとDiscord音声用UDPが必要で、Service・Ingressは不要。NetworkPolicyがある場合はクラスタ側で必要な通信を許可する。
 
 初期リソース設定はrequest 50m CPU / 64Mi、limit 500m CPU / 256Mi。実際の利用状況に応じて調整する。再起動時はセッションと待機音声を引き継がない。
+
+arm64向けは対象のローカル環境で `docker build -t cloudcord:local .` を実行する。Kubernetesでそのイメージを使う場合は、イメージの配置先と `nodeSelector` を合わせる。
