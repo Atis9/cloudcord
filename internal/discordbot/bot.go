@@ -24,8 +24,9 @@ import (
 )
 
 type active struct {
-	speech *session.GuildSession
-	conn   voice.Conn
+	speech     *session.GuildSession
+	conn       voice.Conn
+	recovering bool
 }
 type Bot struct {
 	Client    *bot.Client
@@ -46,7 +47,7 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 	client, err := disgo.New(token,
 		bot.WithGatewayConfigOpts(gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildMessages, gateway.IntentGuildVoiceStates, gateway.IntentMessageContent), gateway.WithAutoReconnect(true)),
 		bot.WithCacheConfigOpts(cache.WithCaches(cache.FlagGuilds, cache.FlagChannels, cache.FlagRoles, cache.FlagVoiceStates)),
-		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(golibdave.NewSession)),
+		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(golibdave.NewSession), voice.WithConnCreateFunc(b.createVoiceConn)),
 		bot.WithEventListenerFunc(b.command), bot.WithEventListenerFunc(b.message), bot.WithEventListenerFunc(b.voiceState),
 	)
 	if err != nil {
@@ -249,8 +250,9 @@ func (b *Bot) voiceState(e *events.GuildVoiceStateUpdate) {
 	guild := e.VoiceState.GuildID
 	b.mu.Lock()
 	a := b.sessions[guild]
+	recovering := a != nil && a.recovering
 	b.mu.Unlock()
-	if a == nil || (e.VoiceState.ChannelID != nil && e.VoiceState.ChannelID.String() == a.speech.VoiceChannelID) {
+	if a == nil || recovering || (e.VoiceState.ChannelID != nil && e.VoiceState.ChannelID.String() == a.speech.VoiceChannelID) {
 		return
 	}
 	// Never block Gateway dispatch while stopping a voice connection.
@@ -259,7 +261,7 @@ func (b *Bot) voiceState(e *events.GuildVoiceStateUpdate) {
 		lock.Lock()
 		defer lock.Unlock()
 		b.mu.Lock()
-		same := b.sessions[guild] == a
+		same := b.sessions[guild] == a && !a.recovering
 		b.mu.Unlock()
 		if same {
 			b.leave(guild)
