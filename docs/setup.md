@@ -7,7 +7,7 @@
 - Message Content Intentを有効にする。
 - 招待scopeは `bot` と `applications.commands`。
 - テキストチャンネルのView Channel、ボイスチャンネルのView Channel・Connect・Speakを許可する。
-- Application IDと利用するサーバーのGuild IDを控える。複数サーバーの場合は `DISCORD_GUILD_ID` にカンマ区切りで指定する（例: `123456789012345678,234567890123456789`）。Botは各サーバーにコマンドを登録する。
+- Application IDを控える。コマンドはグローバル登録され、Botを招待したサーバーで利用できる。
 - Interactions Endpoint URLは不要。BotはGatewayへ接続する。
 
 ## Cloudflare
@@ -29,7 +29,6 @@
 | Variable | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
 | Variable | `CLOUDFLARE_API_BASE_URL` | WorkerのHTTPS URL（`/v1/tts` は含めない） |
 | Variable | `DISCORD_APPLICATION_ID` | Discord Application ID |
-| Variable | `DISCORD_GUILD_ID` | コマンド登録先のGuild ID（複数はカンマ区切り） |
 
 `CI` の成功後、`Deploy Worker` を `main` から実行する。認証secretの登録、Workerデプロイ、認証・入力検証の確認を行う。疎通確認はAI推論を実行しない。
 

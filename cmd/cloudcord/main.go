@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"cloudcord/internal/audio"
@@ -32,10 +31,6 @@ func run() error {
 	if err != nil || app == 0 {
 		return errors.New("DISCORD_APPLICATION_ID is required")
 	}
-	guilds, err := parseGuildIDs(os.Getenv("DISCORD_GUILD_ID"))
-	if err != nil {
-		return err
-	}
 	provider, err := tts.NewCloudflare(os.Getenv("CLOUDFLARE_API_BASE_URL"), os.Getenv("CLOUDFLARE_BOT_API_TOKEN"))
 	if err != nil {
 		return err
@@ -54,31 +49,13 @@ func run() error {
 		return errors.New("Discord client initialization failed")
 	}
 	defer b.Close()
-	for _, guild := range guilds {
-		if err = b.Register(app, guild); err != nil {
-			return err
-		}
+	if err = b.Register(app); err != nil {
+		return err
 	}
 	if err = b.Client.OpenGateway(ctx); err != nil {
 		return errors.New("Discord Gateway connection failed")
 	}
-	slog.Info("bot_running", "guild_count", len(guilds))
+	slog.Info("bot_running")
 	<-ctx.Done()
 	return nil
-}
-
-func parseGuildIDs(value string) ([]snowflake.ID, error) {
-	var ids []snowflake.ID
-	seen := make(map[snowflake.ID]bool)
-	for _, part := range strings.Split(value, ",") {
-		id, err := snowflake.Parse(strings.TrimSpace(part))
-		if err != nil || id == 0 {
-			return nil, errors.New("DISCORD_GUILD_ID must contain one or more comma-separated guild IDs")
-		}
-		if !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }

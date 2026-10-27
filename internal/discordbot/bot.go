@@ -57,15 +57,15 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 	b.Client = client
 	return b, nil
 }
-func (b *Bot) Register(app, guild snowflake.ID) error {
+func (b *Bot) Register(app snowflake.ID) error {
 	permission := discord.PermissionManageGuild
 	cmds := []discord.ApplicationCommandCreate{
 		discord.SlashCommandCreate{Name: "join", Description: "参加中のボイスチャンネルで読み上げを開始", DefaultMemberPermissions: omit.New(&permission), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}, Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionChannel{Name: "text_channel", Description: "読み上げ対象（省略時は現在のテキストチャンネル）", ChannelTypes: []discord.ChannelType{discord.ChannelTypeGuildText}}}},
 		discord.SlashCommandCreate{Name: "leave", Description: "読み上げを停止して退出", DefaultMemberPermissions: omit.New(&permission), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}},
 	}
-	// Upsert these two commands without deleting unrelated guild commands.
+	// Upsert these two commands without deleting unrelated commands.
 	for _, cmd := range cmds {
-		if _, err := b.Client.Rest.CreateGuildCommand(app, guild, cmd, rest.WithCtx(b.ctx)); err != nil {
+		if _, err := b.Client.Rest.CreateGlobalCommand(app, cmd, rest.WithCtx(b.ctx)); err != nil {
 			return errors.New("slash command registration failed")
 		}
 	}
