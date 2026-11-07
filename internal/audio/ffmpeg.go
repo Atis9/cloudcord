@@ -47,35 +47,47 @@ func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStrea
 		return nil, ctx.Err()
 	}
 	child, cancel := context.WithCancel(ctx)
-	// Small probe/analyze limits are sufficient for the known audio formats. One
-	// Opus packet per Ogg page + flush prevents the default one-second page wait.
-	cmd := exec.CommandContext(child, f.Path, "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", format, "-probesize", "4096", "-analyzeduration", "0", "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "audio", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
-	cmd.Stdin = tts.LimitAudio(input.Stream)
+	stream := &ffmpegStream{cancel: cancel, input: input.Stream, frames: make(chan []byte, 3001), done: make(chan struct{})}
+	context.AfterFunc(child, stream.closeInput)
+	var source io.Reader = tts.LimitAudio(input.Stream)
+	inputArgs := []string{"-f", format, "-probesize", "4096", "-analyzeduration", "0"}
+	if format == "wav" {
+		var pcm bool
+		source, pcm = geminiPCM(source)
+		if pcm {
+			inputArgs = []string{"-f", "s16le", "-ar", "24000", "-ac", "1", "-probesize", "4096", "-analyzeduration", "1"}
+		}
+	}
+	if err := child.Err(); err != nil {
+		cancel()
+		stream.closeInput()
+		<-f.slots
+		return nil, err
+	}
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1"}
+	args = append(args, inputArgs...)
+	// One Opus packet per Ogg page + flush prevents the default one-second page wait.
+	args = append(args, "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "audio", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
+	cmd := exec.CommandContext(child, f.Path, args...)
+	cmd.Stdin = source
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
-		input.Stream.Close()
+		stream.closeInput()
 		<-f.slots
 		return nil, errors.New("FFmpeg pipe failed")
 	}
 	if err = cmd.Start(); err != nil {
 		cancel()
 		stdout.Close()
-		input.Stream.Close()
+		stream.closeInput()
 		<-f.slots
 		return nil, errors.New("FFmpeg start failed")
 	}
-	stream := &ffmpegStream{cancel: cancel, input: input.Stream, output: stdout, frames: make(chan []byte, 3001), done: make(chan struct{})}
+	stream.output = stdout
 	// Bound eager decoding to one utterance (60s). It can finish and free the
 	// process slot while Discord consumes the already available frames in real time.
-	go func() {
-		select {
-		case <-child.Done():
-			stream.closeInput()
-		case <-stream.done:
-		}
-	}()
 	go func() {
 		parseErr := walkOpus(io.LimitReader(stdout, (8<<20)+1), func(frame []byte) error {
 			select {
