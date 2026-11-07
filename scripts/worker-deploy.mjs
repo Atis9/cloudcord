@@ -10,6 +10,6 @@ const dir = await mkdtemp(join(tmpdir(), 'cloudcord-secrets-'));
 try {
   const file = join(dir, 'secrets.json');
   await writeFile(file, JSON.stringify({ BOT_API_TOKEN: token }), { mode: 0o600 });
-  const result = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'secret', 'bulk', file], { cwd: 'worker', stdio: 'inherit', env: process.env });
-  if (result.status !== 0) throw new Error('Worker secret update failed');
+  const result = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'deploy', '--secrets-file', file], { cwd: 'worker', stdio: 'inherit', env: process.env });
+  if (result.status !== 0) throw new Error('Worker deployment failed');
 } finally { await rm(dir, { recursive: true, force: true }); }

@@ -31,7 +31,7 @@
 | Variable | `CLOUDFLARE_API_BASE_URL` | WorkerのHTTPS URL（`/v1/tts` は含めない） |
 | Variable | `DISCORD_APPLICATION_ID` | Discord Application ID |
 
-`CI` の成功後、`Deploy Worker` を `main` から実行する。認証secretの登録、Workerデプロイ、認証・入力検証の確認を行う。疎通確認はAI推論を実行しない。
+`CI` の成功後、`Deploy Worker` を `main` から実行する。Workerと認証secretを同じバージョンでデプロイし、認証・入力検証を確認する。通常の疎通確認はAI推論を実行しない。
 
 ## ローカル実行
 

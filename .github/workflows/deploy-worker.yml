@@ -54,13 +54,9 @@ jobs:
         env:
           PROBE_VOICE: ${{ inputs.probe_inworld_voice }}
         run: node scripts/inworld-voice-check.mjs
-      - name: Provision shared API secret
+      - name: Deploy tested Worker with shared API secret
         if: inputs.probe_inworld_voice == ''
-        run: node scripts/worker-secrets.mjs
-      - name: Deploy tested Worker
-        if: inputs.probe_inworld_voice == ''
-        run: npm exec wrangler deploy
-        working-directory: worker
+        run: node scripts/worker-deploy.mjs
       - name: Check deployed Worker (no inference)
         if: inputs.probe_inworld_voice == ''
         env:
