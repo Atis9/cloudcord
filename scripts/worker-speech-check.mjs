@@ -5,7 +5,7 @@ const token = process.env.CLOUDFLARE_BOT_API_TOKEN;
 if (!base || !token || new URL(base).protocol !== 'https:') throw new Error('HTTPS Worker URL and shared token required');
 const url = new URL(`${base.replace(/\/$/, '')}/v1/tts`);
 const engine = process.env.SPEECH_ENGINE || 'configured';
-if (!['configured', 'inworld', 'grok', 'grok-ws'].includes(engine)) throw new Error('Unsupported speech engine');
+if (!['configured', 'inworld', 'grok'].includes(engine)) throw new Error('Unsupported speech engine');
 if (engine !== 'configured') url.searchParams.set('engine', engine);
 const samples = [
   ['Japanese', 'こんにちは。音声の確認です。'],
@@ -45,5 +45,5 @@ for (const [name, text] of samples) {
   const mp3 = count >= 3 && ((prefix[0] === 0x49 && prefix[1] === 0x44 && prefix[2] === 0x33) || (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0));
   const wav = count === 12 && new TextDecoder().decode(prefix.subarray(0, 4)) === 'RIFF' && new TextDecoder().decode(prefix.subarray(8)) === 'WAVE';
   if (!mp3 && !wav) throw new Error(`${name}: invalid audio signature`);
-  console.log(JSON.stringify({ sample: name, engine, bytes: length, first_audio_ms: firstAudio, duration_ms: Date.now() - start, format: mp3 ? 'mp3' : 'wav' }));
+  console.log(JSON.stringify({ sample: name, engine: response.headers.get('x-speech-engine') || engine, bytes: length, first_audio_ms: firstAudio, duration_ms: Date.now() - start, format: mp3 ? 'mp3' : 'wav' }));
 }

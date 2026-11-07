@@ -1,5 +1,3 @@
-import { grokAudio, GrokError } from './grok.ts';
-import type { GrokInput, GrokOptions } from './grok.ts';
 import { createLanguageDetector } from './language.ts';
 import type { LanguageInput } from './language.ts';
 
@@ -8,9 +6,13 @@ export type SpeechInput = {
   temperature: number; timestamp_type: 'none';
 };
 export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
-type SpeechEngine = 'inworld' | 'grok' | 'grok-ws';
+type SpeechEngine = 'inworld' | 'grok';
+type GrokInput = {
+  text: string; language: 'auto'; voice_id: string;
+  output_format: { codec: 'mp3'; sample_rate: 24000; bit_rate: 128000 };
+};
 export interface Env {
-  AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput, options?: GatewayOptions | GrokOptions): Promise<unknown> };
+  AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput, options?: GatewayOptions): Promise<unknown> };
   BOT_API_TOKEN: string;
   AI_GATEWAY_ID: string;
   TTS_VOICE: string;
@@ -227,10 +229,6 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
   try {
     return await Promise.race([
       (async () => {
-        if (engine === 'grok-ws') {
-          const stream = await grokAudio(env.AI, text, env.AI_GATEWAY_ID || 'default', env.GROK_VOICE || 'rex', controller.signal);
-          return { ...await audioStream(stream, controller.signal), language: 'auto' };
-        }
         if (engine === 'grok') {
           const output = await env.AI.run('xai/grok-tts', {
             text, language: 'auto', voice_id: env.GROK_VOICE || 'rex',
@@ -252,7 +250,6 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
     ]);
   } catch (error) {
     if (error instanceof APIError) throw error;
-    if (error instanceof GrokError) throw new APIError(502, error.code, 'Grok speech unavailable');
     if (typeof error === 'object' && error !== null && 'status' in error && error.status === 429) {
       throw new APIError(429, 'tts_rate_limited', 'TTS temporarily rate limited');
     }
@@ -284,10 +281,10 @@ export default {
         throw new APIError(400, 'invalid_input', 'Require a snowflake string, 1–200 characters, and language ja');
       }
       const selected = new URL(request.url).searchParams.get('engine') ?? env.TTS_ENGINE ?? 'inworld';
-      if (selected !== 'inworld' && selected !== 'grok' && selected !== 'grok-ws') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      if (selected !== 'inworld' && selected !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
       console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected }));
-      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language! } });
+      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language!, 'X-Speech-Engine': selected } });
     } catch (error) {
       const failure = error instanceof APIError ? error : new APIError(502, 'tts_failed', 'TTS generation failed');
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));

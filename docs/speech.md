@@ -42,8 +42,8 @@ Workerのログには本文・音声URL・認証情報を含めない。Gateway�
 
 ## Grokとの比較
 
-`TTS_ENGINE=inworld` を既定とし、`grok` へ変更するとCloudflare経由の `xai/grok-tts` REST APIを使用する。`GROK_VOICE` の既定は `rex`。比較時だけ認証済みの `/v1/tts?engine=grok` または `?engine=inworld` で選択することもできる。
+`TTS_ENGINE=grok` でCloudflare経由の `xai/grok-tts` REST APIを使う。試聴後に `inworld` へ戻せる。`GROK_VOICE` の既定は `rex`。比較時だけ認証済みの `/v1/tts?engine=grok` または `?engine=inworld` で選択することもできる。
 
-Grokでは原文を1回送り、言語は `auto` とする。Inworld専用の言語タグや日中判定は適用しない。REST APIは完成音声を返す。実験用の `?engine=grok-ws` は `audio.delta` をMP3として逐次配信するが、Cloudflare上での接続は未確認。キャンセル・エラー・25秒経過・5 MiB超過時には接続を閉じる。外部APIキーは追加せず、AI Gatewayクレジットから支払う。Grokの料金は1文字$0.000015。
+Grokでは原文を1回送り、言語は `auto` とする。Inworld専用の言語タグや日中判定は適用しない。現在のGrok経路も、生成が完了した音声ファイルを取得して返す。外部APIキーは追加せず、AI Gatewayクレジットから支払う。Grokの料金は1文字$0.000015。
 
 `Deploy Worker` の `verify_speech` と `speech_engine` を指定すると、短い日中英・混在文を生成して接続を確認できる。この確認には推論料金がかかる。ログに音声・本文・署名付きURL・一時認証情報は保存しない。`first_audio_ms` と `duration_ms` で音声の到着開始と受信完了を区別する。音質はDiscordで確認する。
