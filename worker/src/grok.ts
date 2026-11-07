@@ -5,6 +5,7 @@ export type GrokInput = {
 export type GrokOptions = {
   gateway: { id: string; skipCache: true; collectLog: false };
   websocket: true;
+  returnRawResponse: true;
 };
 export type GrokAI = { run(model: string, input: GrokInput, options: GrokOptions): Promise<unknown> };
 export class GrokError extends Error {
@@ -130,7 +131,7 @@ export async function grokAudio(ai: GrokAI, text: string, gateway: string, voice
   const output = await ai.run('xai/grok-tts', {
     websocket: true, language: 'auto', voice_id: voice,
     output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 128000 },
-  }, { websocket: true, gateway: { id: gateway, skipCache: true, collectLog: false } });
+  }, { websocket: true, returnRawResponse: true, gateway: { id: gateway, skipCache: true, collectLog: false } });
   const socket = await socketFrom(output, signal);
   return socketAudio(socket, text, signal);
 }

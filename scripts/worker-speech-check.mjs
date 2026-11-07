@@ -21,8 +21,9 @@ for (const [name, text] of samples) {
     body: JSON.stringify({ guild_id: '1', text, language: 'ja' }),
   });
   if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`${name}: HTTP ${response.status}; request ID ${response.headers.get('x-request-id') || 'unknown'}`);
+    const failure = await response.json().catch(() => null);
+    const code = typeof failure?.error?.code === 'string' && /^(grok|tts)_[a-z_]+$/.test(failure.error.code) ? failure.error.code : 'unknown';
+    throw new Error(`${name}: HTTP ${response.status}, ${code}; request ID ${response.headers.get('x-request-id') || 'unknown'}`);
   }
   if (!response.body) throw new Error(`${name}: empty response`);
   const reader = response.body.getReader();
