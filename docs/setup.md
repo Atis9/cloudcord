@@ -48,6 +48,6 @@ FFmpegがPATHにない場合は `FFMPEG_PATH` を設定する。Dockerでの起�
 docker run --rm --init --env-file .env ghcr.io/atis9/cloudcord@sha256:IMAGE_DIGEST
 ```
 
-通常のボイスチャンネルで `/join` → 投稿 → `/leave` を確認する。日本語・英語・中国語と、連続投稿の順序・読み上げ中の停止を確認する。
+通常のボイスチャンネルで `/join` を実行し、日英中韓の単独文と混在文を投稿する。`/voice speaker:Kore` で話者を変え、次の投稿から切り替わることを確認する。連続投稿が順番どおりに再生され、読み上げ中に `/leave` で停止・退出できることも確認する。
 
-障害時はBotのJSONログ、Workerのrequest ID、`X-Speech-Language` を確認する。401は共有token、429は利用制限、音声生成の502はAI Gatewayのクレジット残高・Gateway設定も確認する。
+障害時はBotのJSONログとWorkerのrequest IDを確認する。合成に使ったエンジンは `X-Speech-Engine`、所要時間は `Server-Timing` で確認できる。401は共有token、429は利用制限、音声生成の502はAI Gatewayのクレジット残高・Gateway設定も確認する。
