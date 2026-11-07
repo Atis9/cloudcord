@@ -5,7 +5,7 @@ const token = process.env.CLOUDFLARE_BOT_API_TOKEN;
 if (!base || !token || new URL(base).protocol !== 'https:') throw new Error('HTTPS Worker URL and shared token required');
 const url = new URL(`${base.replace(/\/$/, '')}/v1/tts`);
 const engine = process.env.SPEECH_ENGINE || 'configured';
-if (!['configured', 'inworld', 'grok'].includes(engine)) throw new Error('Unsupported speech engine');
+if (!['configured', 'inworld', 'grok', 'grok-ws'].includes(engine)) throw new Error('Unsupported speech engine');
 if (engine !== 'configured') url.searchParams.set('engine', engine);
 const samples = [
   ['Japanese', 'こんにちは。音声の確認です。'],
@@ -22,7 +22,7 @@ for (const [name, text] of samples) {
   });
   if (!response.ok) {
     const failure = await response.json().catch(() => null);
-    const code = typeof failure?.error?.code === 'string' && /^(grok|tts)_[a-z_]+$/.test(failure.error.code) ? failure.error.code : 'unknown';
+    const code = typeof failure?.error?.code === 'string' && /^(grok|tts)_[a-z_0-9]+$/.test(failure.error.code) ? failure.error.code : 'unknown';
     throw new Error(`${name}: HTTP ${response.status}, ${code}; request ID ${response.headers.get('x-request-id') || 'unknown'}`);
   }
   if (!response.body) throw new Error(`${name}: empty response`);

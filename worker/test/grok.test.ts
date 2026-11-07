@@ -64,7 +64,7 @@ test('catalog cannot redirect ephemeral credentials to an untrusted host',async(
 test('comparison route selects Grok while the configured Inworld path is retained', async () => {
   const socket=new Socket();
   const env:Env={AI:{run:async(model)=>{assert.equal(model,'xai/grok-tts');queueMicrotask(()=>socket.message(delta));return {webSocket:socket};}},BOT_API_TOKEN:'secret',AI_GATEWAY_ID:'default',TTS_VOICE:'Dennis'};
-  const req=new Request('https://example.com/v1/tts?engine=grok',{method:'POST',headers:{authorization:'Bearer secret','content-type':'application/json'},body:JSON.stringify({guild_id:'1',text:'こんにちは test。你好。',language:'ja'})});
+  const req=new Request('https://example.com/v1/tts?engine=grok-ws',{method:'POST',headers:{authorization:'Bearer secret','content-type':'application/json'},body:JSON.stringify({guild_id:'1',text:'こんにちは test。你好。',language:'ja'})});
   // Emit after the async connection setup has installed its listeners.
   const pending=worker.fetch(req,env);
   for(let i=0;i<20;i++)await new Promise(resolve=>setImmediate(resolve));
@@ -72,4 +72,16 @@ test('comparison route selects Grok while the configured Inworld path is retaine
   const response=await pending;
   assert.equal(response.status,200);assert.equal(response.headers.get('x-speech-language'),'auto');
   await response.body?.cancel();assert.ok(socket.closed);
+});
+test('Grok REST submits the mixed text once without forcing a language',async()=>{
+  const text='こんにちは test。你好。';let calls=0;
+  const env:Env={AI:{run:async(model,input)=>{
+    calls++;assert.equal(model,'xai/grok-tts');
+    assert.deepEqual(input,{text,language:'auto',voice_id:'rex',output_format:{codec:'mp3',sample_rate:24000,bit_rate:128000}});
+    return mp3;
+  }},BOT_API_TOKEN:'secret',AI_GATEWAY_ID:'default',TTS_VOICE:'Dennis',TTS_ENGINE:'grok'};
+  const req=new Request('https://example.com/v1/tts',{method:'POST',headers:{authorization:'Bearer secret','content-type':'application/json'},body:JSON.stringify({guild_id:'1',text,language:'ja'})});
+  const response=await worker.fetch(req,env);
+  assert.equal(response.status,200);assert.equal(calls,1);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()),mp3);
 });

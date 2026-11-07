@@ -1,5 +1,5 @@
-export type GrokInput = {
-  websocket: true; language: 'auto'; voice_id: string;
+export type GrokInput = ({ websocket: true } | { text: string }) & {
+  language: 'auto'; voice_id: string;
   output_format: { codec: 'mp3'; sample_rate: 24000; bit_rate: 128000 };
 };
 export type GrokOptions = {
@@ -24,7 +24,6 @@ async function socketFrom(output: unknown, signal: AbortSignal): Promise<VoiceSo
     return output.webSocket as VoiceSocket;
   }
   if (output instanceof Response) {
-    if (!output.ok) { await output.body?.cancel(); throw new GrokError('grok_gateway_rejected'); }
     // Upgrade metadata is small; never parse or log an unbounded error body.
     if (!output.body) throw new GrokError('grok_invalid_handshake');
     const reader = output.body.getReader();
@@ -46,6 +45,12 @@ async function socketFrom(output: unknown, signal: AbortSignal): Promise<VoiceSo
     let offset = 0;
     for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
     const text = new TextDecoder().decode(data);
+    if (!output.ok) {
+      let upstreamCode: unknown;
+      try { const failure = JSON.parse(text); upstreamCode = failure.internalCode ?? failure.errors?.[0]?.code; } catch { /* Non-JSON gateway error. */ }
+      const suffix = typeof upstreamCode === 'number' && Number.isSafeInteger(upstreamCode) ? `_${upstreamCode}` : '';
+      throw new GrokError(`grok_gateway_rejected_${output.status}${suffix}`);
+    }
     return socketFrom(JSON.parse(text), signal);
   }
   const result = output as { result?: unknown; websocket?: {url?: unknown; headers?: unknown} } | null;

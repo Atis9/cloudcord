@@ -8,12 +8,13 @@ export type SpeechInput = {
   temperature: number; timestamp_type: 'none';
 };
 export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
+type SpeechEngine = 'inworld' | 'grok' | 'grok-ws';
 export interface Env {
   AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput, options?: GatewayOptions | GrokOptions): Promise<unknown> };
   BOT_API_TOKEN: string;
   AI_GATEWAY_ID: string;
   TTS_VOICE: string;
-  TTS_ENGINE?: 'inworld' | 'grok';
+  TTS_ENGINE?: SpeechEngine;
   GROK_VOICE?: string;
 }
 const detectLanguage = createLanguageDetector();
@@ -220,15 +221,22 @@ export function speechText(text: string, language: string): string {
   // the catalog endpoint's 2,000-character limit. Keep its language hint.
   return tagged.length <= 2000 ? tagged : `<lang lang="${code}">${escaped}</lang>`;
 }
-async function synthesize(env: Env, text: string, engine: 'inworld' | 'grok'): Promise<AudioStream> {
+async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const controller = new AbortController();
   try {
     return await Promise.race([
       (async () => {
-        if (engine === 'grok') {
+        if (engine === 'grok-ws') {
           const stream = await grokAudio(env.AI, text, env.AI_GATEWAY_ID || 'default', env.GROK_VOICE || 'rex', controller.signal);
           return { ...await audioStream(stream, controller.signal), language: 'auto' };
+        }
+        if (engine === 'grok') {
+          const output = await env.AI.run('xai/grok-tts', {
+            text, language: 'auto', voice_id: env.GROK_VOICE || 'rex',
+            output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 128000 },
+          }, { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } });
+          return { ...await audioStream(output, controller.signal), language: 'auto' };
         }
         const lang = await detectLanguage(text, env.AI, 'ja');
         if (controller.signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
@@ -276,7 +284,7 @@ export default {
         throw new APIError(400, 'invalid_input', 'Require a snowflake string, 1–200 characters, and language ja');
       }
       const selected = new URL(request.url).searchParams.get('engine') ?? env.TTS_ENGINE ?? 'inworld';
-      if (selected !== 'inworld' && selected !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      if (selected !== 'inworld' && selected !== 'grok' && selected !== 'grok-ws') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
       console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected }));
       return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language! } });

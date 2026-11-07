@@ -9,7 +9,7 @@ on:
       speech_engine:
         description: 'Engine to verify; does not change the default engine'
         type: choice
-        options: [configured, inworld, grok]
+        options: [configured, inworld, grok, grok-ws]
         default: configured
 permissions:
   contents: read
