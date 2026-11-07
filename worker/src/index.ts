@@ -1,21 +1,20 @@
-import { japaneseText } from './kana.ts';
-import type { WordConverter } from './kana.ts';
-import { createLLMKanaConverter } from './llm-kana.ts';
-import type { KanaInput } from './llm-kana.ts';
 import { createLanguageDetector } from './language.ts';
 import type { LanguageInput } from './language.ts';
 
+export type SpeechInput = {
+  text: string; voice_id: string; output_format: 'mp3';
+  temperature: number; timestamp_type: 'none';
+};
+export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
 export interface Env {
-  AI: { run(model: string, input: { prompt: string; lang: string } | { text: string; speaker: 'draco'; encoding: 'mp3' } | KanaInput | LanguageInput): Promise<unknown> };
+  AI: { run(model: string, input: SpeechInput | LanguageInput, options?: GatewayOptions): Promise<unknown> };
   BOT_API_TOKEN: string;
-  MELOTTS_LANG: string;
-  KANA_MODE?: string;
+  AI_GATEWAY_ID: string;
+  TTS_VOICE: string;
 }
-const llmKana = createLLMKanaConverter();
 const detectLanguage = createLanguageDetector();
 const MAX_AUDIO = 5 * 1024 * 1024;
-const MODEL = '@cf/myshell-ai/melotts';
-const ENGLISH_MODEL = '@cf/deepgram/aura-2-en';
+const MODEL = 'inworld/tts-2';
 class APIError extends Error {
   status: number;
   code: string;
@@ -48,7 +47,7 @@ async function readBounded(stream: ReadableStream<Uint8Array>, limit: number, si
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
   return data;
 }
-// Decode binary / JSON variants; the real MeloTTS binding can return WAV.
+// Decode binary and base64 JSON audio variants.
 export async function decodeAudio(output: unknown, signal?: AbortSignal): Promise<Uint8Array> {
   let data: Uint8Array;
   if (output instanceof Response) {
@@ -80,7 +79,7 @@ export async function decodeAudio(output: unknown, signal?: AbortSignal): Promis
   audioMIME(data);
   return data;
 }
-type AudioStream = { stream: ReadableStream<Uint8Array>; mime: 'audio/mpeg' | 'audio/wav'; kanaSource?: string; language?: string };
+type AudioStream = { stream: ReadableStream<Uint8Array>; mime: 'audio/mpeg' | 'audio/wav'; language?: string };
 function isMP3(data: Uint8Array): boolean {
   return (data[0] === 0x49 && data[1] === 0x44 && data[2] === 0x33) ||
     (data[0] === 0xff && (data[1] & 0xe0) === 0xe0);
@@ -98,6 +97,33 @@ export async function audioStream(output: unknown, signal?: AbortSignal): Promis
     const body = output instanceof Response ? output.body : output instanceof ReadableStream ? output : null;
     await body?.cancel().catch(() => {});
     throw new APIError(504, 'tts_timeout', 'TTS timed out');
+  }
+  // Catalog models return a signed audio URL, either directly or in result.
+  if (typeof output === 'object' && output !== null && !(output instanceof Response)) {
+    const envelope = output as { state?: unknown; result?: unknown; audio?: unknown };
+    if (envelope.state !== undefined && envelope.state !== 'Completed') throw new Error('incomplete AI output');
+    if (envelope.result !== undefined) return audioStream(envelope.result, signal);
+    if (typeof envelope.audio === 'string' && /^https?:/i.test(envelope.audio)) {
+      const url = new URL(envelope.audio);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash ||
+          !['.r2.dev', '.r2.cloudflarestorage.com'].some(suffix => url.hostname.endsWith(suffix))) {
+        throw new Error('untrusted audio URL');
+      }
+      const response = await fetch(url, { signal, redirect: 'manual', credentials: 'omit' });
+      // Do not recurse into JSON/redirect responses from the download origin.
+      if (!response.ok || !response.body || response.headers.get('content-type')?.includes('json')) {
+        await response.body?.cancel();
+        throw new Error('audio download failed');
+      }
+      const size = Number(response.headers.get('content-length'));
+      if (size > MAX_AUDIO) { await response.body.cancel(); throw new Error('size limit'); }
+      return audioStream(response, signal);
+    }
+  }
+  if (output instanceof Response && output.ok && output.headers.get('content-type')?.includes('application/json')) {
+    if (!output.body) throw new Error('empty AI output');
+    const raw = await readBounded(output.body, Math.ceil(MAX_AUDIO * 4 / 3) + 4096, signal);
+    return audioStream(JSON.parse(new TextDecoder().decode(raw)), signal);
   }
   if (output instanceof Response && (!output.ok || output.headers.get('content-type')?.includes('application/json'))) {
     const data = await decodeAudio(output, signal);
@@ -179,24 +205,33 @@ async function authorized(header: string | null, token: string): Promise<boolean
   for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
   return difference === 0;
 }
-async function synthesize(env: Env, text: string, convertWord: WordConverter): Promise<AudioStream> {
+// Tags disambiguate Han characters without splitting the audio or converting
+// English to kana. Escape input markup so it cannot override our language tags.
+export function speechText(text: string, language: string): string {
+  const escaped = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  if (language === 'en') return escaped;
+  const code = language === 'zh' ? 'zh-CN' : 'ja-JP';
+  const tagged = escaped.replace(/\p{Script=Han}+/gu, word => `<lang lang="${code}">${word}</lang>`);
+  // Alternating scripts can otherwise expand a valid 200-character post past
+  // the catalog endpoint's 2,000-character limit. Keep its language hint.
+  return tagged.length <= 2000 ? tagged : `<lang lang="${code}">${escaped}</lang>`;
+}
+async function synthesize(env: Env, text: string): Promise<AudioStream> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const controller = new AbortController();
-  const deadline = Date.now() + 25_000;
   try {
-    // A binding call has no supported AbortSignal. The response is bounded;
-    // an already submitted inference may still finish after this deadline.
-    const lang = await detectLanguage(text, env.AI, env.MELOTTS_LANG || 'jp');
-    const isJapanese = lang !== 'en' && lang !== 'zh';
-    const kana = isJapanese && env.KANA_MODE === 'llm' && /[A-Za-z]/.test(text)
-      ? await llmKana(text, env.AI, convertWord) : undefined;
-    const prompt = isJapanese ? kana?.text ?? japaneseText(text, convertWord) : text;
     return await Promise.race([
-      (lang === 'en'
-        ? env.AI.run(ENGLISH_MODEL, { text: prompt, speaker: 'draco', encoding: 'mp3' })
-        : env.AI.run(MODEL, { prompt, lang })).then(async output => ({...await audioStream(output, controller.signal), kanaSource: kana?.source, language: lang === 'jp' ? 'ja' : lang})),
+      (async () => {
+        const lang = await detectLanguage(text, env.AI, 'ja');
+        if (controller.signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
+        const output = await env.AI.run(MODEL, {
+          text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Dennis',
+          output_format: 'mp3', temperature: 1, timestamp_type: 'none',
+        }, { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } });
+        return { ...await audioStream(output, controller.signal), language: lang };
+      })(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => { controller.abort(); reject(new APIError(504, 'tts_timeout', 'TTS timed out')); }, Math.max(0, deadline - Date.now()));
+        timer = setTimeout(() => { controller.abort(); reject(new APIError(504, 'tts_timeout', 'TTS timed out')); }, 25_000);
       }),
     ]);
   } catch (error) {
@@ -208,7 +243,7 @@ async function synthesize(env: Env, text: string, convertWord: WordConverter): P
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 export default {
-  async fetch(request: Request, env: Env, convertWord: WordConverter): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const requestID = crypto.randomUUID();
     const started = Date.now();
     const headers = { 'X-Request-ID': requestID, 'Cache-Control': 'no-store' };
@@ -231,9 +266,9 @@ export default {
           typeof value.text !== 'string' || value.text.trim().length === 0 || [...value.text].length > 200 || value.language !== 'ja') {
         throw new APIError(400, 'invalid_input', 'Require a snowflake string, 1–200 characters, and language ja');
       }
-      const data = await synthesize(env, value.text, convertWord);
-      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, kana_source: data.kanaSource, language: data.language }));
-      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language!, ...(data.kanaSource ? {'X-Kana-Source': data.kanaSource} : {}) } });
+      const data = await synthesize(env, value.text);
+      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language }));
+      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language! } });
     } catch (error) {
       const failure = error instanceof APIError ? error : new APIError(502, 'tts_failed', 'TTS generation failed');
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));

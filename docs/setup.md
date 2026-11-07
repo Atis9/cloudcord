@@ -15,7 +15,8 @@
 1. Workersの `workers.dev` サブドメインを設定し、Account IDを控える。Worker名は `cloudcord`。
 2. 対象アカウントへWorkerをデプロイできるAPI tokenを作成する。初回作成時と既存Worker更新時の権限は[公式の権限表](https://developers.cloudflare.com/workers/authorization/workers/)で確認する。
 3. BotとWorker間で共有するランダムな認証tokenを生成する（例: `openssl rand -hex 32`）。管理用API tokenとは別の値にする。
-4. Workers AIを有効にする。AI bindingを使用するため、外部APIキーやAI Gatewayの購入クレジットは不要。
+4. Workers AIを有効にし、AI GatewayのUnified Billing用クレジットを追加する。Inworldの外部APIキーは不要。
+5. `worker/wrangler.toml` の `AI_GATEWAY_ID` と `TTS_VOICE` を確認する。既定のGateway `default` は最初の認証済み呼び出しで自動作成される。Gatewayの「Require provider credentials」はオフにする。話者は `Dennis` が既定で、CloudflareのInworld TTS 2モデルの話者一覧から変更できる。
 
 ## GitHub
 
@@ -49,4 +50,4 @@ docker run --rm --init --env-file .env ghcr.io/atis9/cloudcord@sha256:IMAGE_DIGE
 
 通常のボイスチャンネルで `/join` → 投稿 → `/leave` を確認する。日本語・英語・中国語と、連続投稿の順序・読み上げ中の停止を確認する。
 
-障害時はBotのJSONログ、Workerのrequest ID、`X-Speech-Language` を確認する。401は共有token、429はWorkers AIの利用制限を確認する。
+障害時はBotのJSONログ、Workerのrequest ID、`X-Speech-Language` を確認する。401は共有token、429は利用制限、音声生成の502はAI Gatewayのクレジット残高・Gateway設定も確認する。

@@ -7,8 +7,7 @@ workers_dev = true
 binding = "AI"
 
 [vars]
-# Workers AI only; no AI Gateway credits or external provider keys.
-KANA_MODE = "llm"
-# MeloTTS Japanese language identifier.
-MELOTTS_LANG = "jp"
+# The authenticated default AI Gateway is created on first use.
+AI_GATEWAY_ID = "default"
+TTS_VOICE = "Dennis"
 # BOT_API_TOKEN is provisioned by the Deploy Worker GitHub Actions workflow.

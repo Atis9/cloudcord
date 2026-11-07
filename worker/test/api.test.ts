@@ -1,66 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import coreWorker, { decodeAudio } from '../src/index.ts';
-import { spellWord as convertWord } from '../src/kana.ts';
-const worker = { fetch: (request: Request, env: Env) => coreWorker.fetch(request, env, convertWord) };
+import worker, { decodeAudio, speechText } from '../src/index.ts';
 import type { Env } from '../src/index.ts';
 const audio = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]);
 function request(body: unknown = { guild_id: '123456789012345678', text: 'こんにちは', language: 'ja' }, token = 'secret'): Request {
   return new Request('https://example.com/v1/tts', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 }
-function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', MELOTTS_LANG: 'jp', AI: { run } }; }
-test('authenticated Japanese request returns binary MP3 and exact binding parameters', async () => {
-  let calls = 0;
-  const env = environment(async (model, input) => { calls++; assert.equal(model, '@cf/myshell-ai/melotts'); assert.deepEqual(input, { prompt: 'こんにちは', lang: 'jp' }); return new Response(audio, { headers: { 'Content-Type': 'audio/mpeg' } }); });
-  const response = await worker.fetch(request(), env);
-  assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'audio/mpeg');
-  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), audio); assert.equal(calls, 1);
-});
-test('mixed post is converted in the Worker and synthesized exactly once', async () => {
-  let calls = 0;
-  const response = await worker.fetch(request({guild_id: '12', text: '読み上げの test を行います', language: 'ja'}), environment(async (_, input) => {
-    calls++;
-    assert.deepEqual(input, {prompt: '読み上げの ティーイーエスティー を行います', lang: 'jp'});
-    return audio;
-  }));
-  assert.equal(response.status, 200);
-  assert.equal(calls, 1);
-  await response.body?.cancel();
-});
-test('real binding base64 WAV is served with its actual format and Japanese adapter language', async () => {
-  const wav = new Uint8Array(48);
-  wav.set(new TextEncoder().encode('RIFF'), 0);
-  wav.set(new TextEncoder().encode('WAVEfmt '), 8);
-  const response = await worker.fetch(request(), environment(async (_, input) => {
-    assert.equal(input.lang, 'jp');
-    return { audio: btoa(String.fromCharCode(...wav)) };
-  }));
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('content-type'), 'audio/wav');
-  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), wav);
-});
-test('English-only posts use British Draco while Japanese, mixed text and numbers retain MeloTTS', async () => {
-  for (const [text, lang] of [
-    ['Hello, this is a test.', 'en'],
-    ['For workflows on GitHub Actions to authenticate with k8s.chitoku.jp, it trusts GitHub Actions through OpenID Connect.', 'en'],
-    ['GitHub Actionsを使います。', 'jp'], ['こんにちは。', 'jp'], ['12345', 'jp'],
+function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', AI_GATEWAY_ID: 'default', TTS_VOICE: 'Dennis', AI: { run } }; }
+test('all languages and mixed posts use one Inworld synthesis with original English', async () => {
+  for (const [text, language] of [
+    ['こんにちは', 'ja'], ['Hello, this is a test.', 'en'],
+    ['読み上げの test を行います', 'ja'], ['你好，这是中文语音测试。', 'zh'],
+    ['这 API を試します。', 'zh'], ['12345', 'ja'],
   ]) {
     let calls = 0;
-    const response = await worker.fetch(request({guild_id: '12', text, language: 'ja'}), environment(async (model, input) => {
+    const response = await worker.fetch(request({guild_id:'12',text,language:'ja'}), environment(async (model,input,options) => {
       calls++;
-      if (lang === 'en') {
-        assert.equal(model, '@cf/deepgram/aura-2-en');
-        assert.deepEqual(input, {text, speaker:'draco', encoding:'mp3'});
-      } else {
-        assert.equal(model, '@cf/myshell-ai/melotts');
-        assert.deepEqual(input, {lang, prompt: text.replace('GitHub Actions', convertWord('GitHub') + ' ' + convertWord('Actions'))});
-      }
+      assert.equal(model,'inworld/tts-2');
+      assert.deepEqual(input,{text:speechText(text,language),voice_id:'Dennis',output_format:'mp3',temperature:1,timestamp_type:'none'});
+      assert.deepEqual(options,{gateway:{id:'default',skipCache:true,collectLog:false}});
       return audio;
     }));
-    assert.equal(response.status, 200);
-    assert.equal(calls, 1);
-    await response.body?.cancel();
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('x-speech-language'),language);
+    assert.equal(response.headers.get('x-kana-source'),null);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()),audio);
+    assert.equal(calls,1);
   }
+});
+test('Han hints preserve simplified priority and English while escaping user markup', () => {
+  assert.equal(speechText('这是 test です','zh'),'<lang lang="zh-CN">这是</lang> test です');
+  assert.equal(speechText('東京 API を使います','ja'),'<lang lang="ja-JP">東京</lang> API を<lang lang="ja-JP">使</lang>います');
+  assert.equal(speechText('<lang lang="en">東京</lang> &','ja'),'&lt;lang lang="en"&gt;<lang lang="ja-JP">東京</lang>&lt;/lang&gt; &amp;');
+  const alternating = '汉a'.repeat(100);
+  assert.equal(speechText(alternating, 'zh'), `<lang lang="zh-CN">${alternating}</lang>`);
+  assert.ok(speechText(alternating, 'zh').length <= 2000);
+});
+test('base64 WAV remains supported', async () => {
+  const wav=new TextEncoder().encode('RIFF1234WAVEaudio');
+  const response=await worker.fetch(request(),environment(async () => ({audio:btoa(String.fromCharCode(...wav))})));
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('content-type'),'audio/wav');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()),wav);
 });
 test('fragmented WAV header is validated without changing or buffering the audio body', async () => {
   const wav = new TextEncoder().encode('RIFF1234WAVEaudio');
@@ -162,121 +143,76 @@ test('timeout before the first audio closes the upstream stream', async t => {
   assert.equal(cancelled, true);
 });
 
-test('LLM mode changes only mixed posts, using one conversion and one TTS call', async () => {
-  const calls: string[] = [];
-  const env = environment(async (model, input) => {
+test('ambiguous Han still uses Clef, then the same multilingual TTS', async () => {
+  const calls:string[]=[];
+  const response=await worker.fetch(request({guild_id:'12',text:'東京',language:'ja'}),environment(async(model,input) => {
     calls.push(model);
-    if (model.includes('qwen')) return {response: '["ワーカー"]'};
-    assert.deepEqual(input, {prompt: 'ワーカー を使います', lang: 'jp'});
+    if(model.includes('clef'))return {answers:{language:{choice:'ja',confidence:0.95}}};
+    assert.equal(input.text,'<lang lang="ja-JP">東京</lang>');
     return audio;
-  });
-  env.KANA_MODE = 'llm';
-  const response = await worker.fetch(request({guild_id: '12', text: 'Worker を使います', language: 'ja'}), env);
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-kana-source'), 'llm');
-  assert.deepEqual(calls, ['@cf/qwen/qwen3-30b-a3b-fp8', '@cf/myshell-ai/melotts']);
-  await response.body?.cancel();
-  for (const text of ['こんにちは', 'Hello world']) {
-    let calls = 0;
-    const env = environment(async (model) => { calls++; assert.equal(model, text === 'Hello world' ? '@cf/deepgram/aura-2-en' : '@cf/myshell-ai/melotts'); return audio; });
-    env.KANA_MODE = 'llm';
-    const response = await worker.fetch(request({guild_id: '12', text, language: 'ja'}), env);
-    assert.equal(response.status, 200);
-    assert.equal(calls, 1);
-    await response.body?.cancel();
-  }
-});
-test('LLM failure still sends the existing kana reading to TTS once', async () => {
-  let calls = 0;
-  const env = environment(async (model, input) => {
-    calls++;
-    if (model.includes('qwen')) throw new Error('failed');
-    assert.deepEqual(input, {prompt: '読み上げの ティーイーエスティー を行います', lang: 'jp'});
-    return audio;
-  });
-  env.KANA_MODE = 'llm';
-  const response = await worker.fetch(request({guild_id: '12', text: '読み上げの test を行います', language: 'ja'}), env);
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-kana-source'), 'fallback');
-  assert.equal(calls, 2);
-  await response.body?.cancel();
-});
-
-test('Chinese and Chinese-English text go unchanged to zh, without kana conversion', async () => {
-  for (const text of ['你好，这是中文语音测试。', '歡迎使用 Discord。']) {
-    const calls: string[] = [];
-    const env = environment(async (model, input) => {
-      calls.push(model);
-      if (model.includes('clef')) return {answers: {language: {choice:'zh',confidence:0.99}}};
-      assert.deepEqual(input, {prompt:text, lang:'zh'});
-      return audio;
-    });
-    env.KANA_MODE='llm';
-    const response=await coreWorker.fetch(request({guild_id:'12',text,language:'ja'}), env, () => {assert.fail('no kana for Chinese');});
-    assert.equal(response.status,200);
-    assert.equal(response.headers.get('x-speech-language'),'zh');
-    assert.equal(response.headers.get('x-kana-source'),null);
-    assert.equal(calls.length,text.includes('这') ? 1 : 2);
-    await response.body?.cancel();
-  }
-});
-test('ambiguous Japanese Han text retains Japanese after classification', async () => {
-  let calls=0;
-  const env=environment(async (model,input) => {
-    calls++;
-    if(model.includes('clef'))return {answers: {language: {choice:'ja',confidence:0.95}}};
-    assert.deepEqual(input,{prompt:'東京',lang:'jp'});
-    return audio;
-  });
-  const response=await worker.fetch(request({guild_id:'12',text:'東京',language:'ja'}),env);
+  }));
   assert.equal(response.status,200);
-  assert.equal(response.headers.get('x-speech-language'),'ja');
-  assert.equal(calls,2);
+  assert.deepEqual(calls,['@cf/cloudflare/clef','inworld/tts-2']);
   await response.body?.cancel();
 });
-
-test('language detection consumes the shared 25-second synthesis budget', async t => {
+test('language detection consumes the shared synthesis budget', async t => {
   t.mock.timers.enable({apis:['Date','setTimeout'],now:0});
-  let beginDetection!: () => void;
-  let beginSpeech!: () => void;
-  const detecting=new Promise<void>(done => {beginDetection=done;});
-  const speaking=new Promise<void>(done => {beginSpeech=done;});
-  const env=environment(async model => {
-    if(model.includes('clef')) {
-      beginDetection();
-      return new Promise(done => setTimeout(() => done({answers:{language:{choice:'zh',confidence:0.99}}}),2000));
-    }
-    beginSpeech();
-    return new Promise(() => {});
-  });
-  let settled=false;
-  const response=worker.fetch(request({guild_id:'12',text:'中文共享時限。',language:'ja'}),env);
-  void response.then(() => {settled=true;});
-  await detecting;
-  t.mock.timers.tick(2000);
-  await speaking;
-  t.mock.timers.tick(22999);
-  await Promise.resolve();
-  assert.equal(settled,false);
-  t.mock.timers.tick(1);
-  assert.equal((await response).status,504);
+  let detection!:()=>void, speech!:()=>void;
+  const detecting=new Promise<void>(resolve=>{detection=resolve;});
+  const speaking=new Promise<void>(resolve=>{speech=resolve;});
+  const pending=worker.fetch(request({guild_id:'12',text:'中文共享時限。',language:'ja'}),environment(async model=>{
+    if(model.includes('clef')){detection();return new Promise(resolve=>setTimeout(()=>resolve({answers:{language:{choice:'zh',confidence:0.99}}}),2000));}
+    speech();return new Promise(()=>{});
+  }));
+  await detecting;t.mock.timers.tick(2000);await speaking;
+  t.mock.timers.tick(23000);assert.equal((await pending).status,504);
 });
-
-
-test('simplified markers override kana and skip both language and kana inference', async () => {
-  const text = '这 API を試します。';
-  let calls=0;
-  const env=environment(async (model,input) => {
-    calls++;
-    assert.equal(model,'@cf/myshell-ai/melotts');
-    assert.deepEqual(input,{prompt:text,lang:'zh'});
-    return audio;
+test('signed R2 audio downloads stream without forwarding credentials', async t => {
+  let cancelled=false;
+  t.mock.method(globalThis,'fetch',async (url:URL,init:RequestInit)=>{
+    assert.equal(url.hostname,'audio.r2.dev');
+    assert.equal(init.redirect,'manual');assert.equal(init.credentials,'omit');
+    assert.equal(init.headers,undefined);assert.ok(init.signal);
+    return new Response(new ReadableStream({start(c){c.enqueue(audio);},cancel(){cancelled=true;}}));
   });
-  env.KANA_MODE='llm';
-  const response=await worker.fetch(request({guild_id:'12',text,language:'ja'}),env);
+  const response=await worker.fetch(request(),environment(async()=>({state:'Completed',result:{audio:'https://audio.r2.dev/speech.mp3?signature=private'}})));
   assert.equal(response.status,200);
-  assert.equal(response.headers.get('x-speech-language'),'zh');
-  assert.equal(response.headers.get('x-kana-source'),null);
-  assert.equal(calls,1);
-  await response.body?.cancel();
+  const reader=response.body!.getReader();assert.deepEqual((await reader.read()).value,audio);
+  await reader.cancel();assert.equal(cancelled,true);
+});
+test('untrusted URLs, failed jobs and redirected downloads are rejected', async t => {
+  let downloads=0;
+  t.mock.method(globalThis,'fetch',async()=>{downloads++;return new Response(null,{status:302,headers:{location:'http://127.0.0.1/'}});});
+  for(const output of [
+    {audio:'https://127.0.0.1/audio'}, {audio:'http://audio.r2.dev/audio'},
+    {audio:'https://audio.r2.dev.evil.example/audio'}, {audio:'https://user:pass@audio.r2.dev/audio'},
+    {state:'Failed',result:{audio:'https://audio.r2.dev/audio'}},
+  ]) assert.equal((await worker.fetch(request(),environment(async()=>output))).status,502);
+  assert.equal(downloads,0);
+  assert.equal((await worker.fetch(request(),environment(async()=>({audio:'https://audio.r2.dev/audio'})))).status,502);
+  assert.equal(downloads,1);
+});
+test('catalog JSON envelopes and download failures are bounded and sanitized', async t => {
+  let mode='ok';
+  t.mock.method(globalThis,'fetch',async()=>{
+    if(mode==='large')return new Response(audio,{headers:{'content-length':String(6*1024*1024)}});
+    if(mode==='json')return Response.json({audio:'https://audio.r2.dev/loop'});
+    return new Response(audio);
+  });
+  const env=environment(async()=>Response.json({state:'Completed',result:{audio:'https://audio.r2.dev/signed?secret=private'}}));
+  assert.equal((await worker.fetch(request(),env)).status,200);
+  for(mode of ['large','json']){
+    const response=await worker.fetch(request(),env);
+    assert.equal(response.status,502);assert.ok(!(await response.text()).includes('private'));
+  }
+});
+test('audio download timeout aborts fetch without retrying inference', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let downloading!:()=>void;
+  const started=new Promise<void>(resolve=>{downloading=resolve;});
+  let signal:AbortSignal|undefined;
+  t.mock.method(globalThis,'fetch',async(_:URL,init:RequestInit)=>{signal=init.signal!;downloading();return new Promise(()=>{});});
+  const pending=worker.fetch(request(),environment(async()=>({audio:'https://audio.r2.dev/audio'})));
+  await started;t.mock.timers.tick(25000);
+  assert.equal((await pending).status,504);assert.equal(signal!.aborted,true);
 });
