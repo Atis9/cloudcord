@@ -42,7 +42,7 @@ Workerのログには本文・音声URL・認証情報を含めない。Gateway�
 
 ## Grokとの比較
 
-`TTS_ENGINE=grok` でCloudflare経由の `xai/grok-tts` REST APIを使う。試聴後に `inworld` へ戻せる。`GROK_VOICE` の既定は `rex`。比較時だけ認証済みの `/v1/tts?engine=grok` または `?engine=inworld` で選択することもできる。
+通常運用は `TTS_ENGINE=inworld`。比較する場合は、認証済みの `/v1/tts?engine=grok` でCloudflare経由の `xai/grok-tts` REST APIを指定できる。`GROK_VOICE` の既定は `rex`。
 
 Grokでは原文を1回送り、言語は `auto` とする。Inworld専用の言語タグや日中判定は適用しない。現在のGrok経路も、生成が完了した音声ファイルを取得して返す。外部APIキーは追加せず、AI Gatewayクレジットから支払う。Grokの料金は1文字$0.000015。
 
