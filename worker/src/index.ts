@@ -285,7 +285,7 @@ export default {
       }
       const override = new URL(request.url).searchParams.get('engine');
       if (override !== null && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
-      const selected = override ?? env.TTS_ENGINE ?? 'gemini';
+      const selected = override ?? env.TTS_ENGINE ?? 'gemini-lite';
       if (selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini' && selected !== 'gemini-lite') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
       console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, engine: selected, ...data.timings }));

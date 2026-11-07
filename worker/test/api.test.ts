@@ -12,7 +12,7 @@ test('the default engine sends each post to Gemini once with no separate languag
     let calls = 0;
     const response = await worker.fetch(request({ guild_id: '12', text, language: 'ja' }), environment(async (model, input, options) => {
       calls++;
-      assert.equal(model, 'google/gemini-3.8-flash-tts');
+      assert.equal(model, 'google/gemini-3.8-flash-lite-tts');
       assert.deepEqual(input, { text, voice: 'Kore' });
       assert.deepEqual(options, { gateway: { id: 'default', skipCache: true, collectLog: false } });
       return audio;
