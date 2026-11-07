@@ -1,6 +1,11 @@
 name: Publish Bot
 on:
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      image_digest:
+        description: 'Published GHCR image digest'
+        value: ${{ jobs.publish.outputs.image_digest }}
 permissions:
   contents: read
 concurrency:
@@ -11,9 +16,11 @@ defaults:
     shell: bash
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'push' && github.ref_type == 'tag')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      image_digest: ${{ steps.publish.outputs.image_digest }}
     permissions:
       contents: read
       packages: write
@@ -23,6 +30,7 @@ jobs:
       COMMIT: ${{ github.sha }}
     steps:
       - name: Find successful CI for this commit
+        if: github.event_name == 'workflow_dispatch'
         id: ci
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,7 +45,7 @@ jobs:
           name: bot-linux-amd64-${{ github.sha }}
           path: images
           run-id: ${{ steps.ci.outputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.ci.outputs.run_id && secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -45,6 +53,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified amd64 image
+        id: publish
         working-directory: images
         run: |
           image="ghcr.io/${REPOSITORY,,}"
@@ -58,6 +67,8 @@ jobs:
           docker push "$tag"
           docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' > "$RUNNER_TEMP/manifest.json"
           digest=$(jq -er .digest "$RUNNER_TEMP/manifest.json")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
           {
             echo '### Bot image (linux/amd64)'
             echo

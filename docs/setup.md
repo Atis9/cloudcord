@@ -31,7 +31,7 @@
 | Variable | `CLOUDFLARE_API_BASE_URL` | WorkerのHTTPS URL（`/v1/tts` は含めない） |
 | Variable | `DISCORD_APPLICATION_ID` | Discord Application ID |
 
-`CI` の成功後、`Deploy Worker` を `main` から実行する。Workerと認証secretを同じバージョンでデプロイし、認証・入力検証を確認する。通常の疎通確認はAI推論を実行しない。
+通常のリリースは[タグで本番へデプロイ](kubernetes.md#タグで本番へデプロイ)する。Workerだけを手動で更新する場合は、`CI` の成功後に `Deploy Worker` を `main` から実行する。Workerと認証secretを同じバージョンでデプロイし、認証・入力検証を確認する。通常の疎通確認はAI推論を実行しない。
 
 ## ローカル実行
 
