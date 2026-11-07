@@ -39,24 +39,21 @@ jobs:
           node-version: '24.19.0'
           cache: npm
           cache-dependency-path: worker/package-lock.json
-      - name: Probe Inworld voice without deployment
-        if: inputs.probe_inworld_voice != ''
-        env:
-          PROBE_VOICE: ${{ inputs.probe_inworld_voice }}
-        run: node scripts/inworld-voice-check.mjs
       - name: Validate deployment configuration
-        if: inputs.probe_inworld_voice == ''
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Missing CLOUDFLARE_API_TOKEN secret'; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'Missing CLOUDFLARE_ACCOUNT_ID variable'; exit 1; }
           test -n "$WORKER_URL" || { echo 'Missing CLOUDFLARE_API_BASE_URL variable'; exit 1; }
           test -n "$CLOUDFLARE_BOT_API_TOKEN" || { echo 'Missing CLOUDFLARE_BOT_API_TOKEN secret'; exit 1; }
       - run: npm ci
-        if: inputs.probe_inworld_voice == ''
         working-directory: worker
       - run: npm run typecheck && npm test
-        if: inputs.probe_inworld_voice == ''
         working-directory: worker
+      - name: Probe Inworld voice without deployment
+        if: inputs.probe_inworld_voice != ''
+        env:
+          PROBE_VOICE: ${{ inputs.probe_inworld_voice }}
+        run: node scripts/inworld-voice-check.mjs
       - name: Provision shared API secret
         if: inputs.probe_inworld_voice == ''
         run: node scripts/worker-secrets.mjs

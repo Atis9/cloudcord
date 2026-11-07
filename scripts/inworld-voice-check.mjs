@@ -1,33 +1,35 @@
-// Run an opt-in voice compatibility check without modifying the Worker.
-const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-const token = process.env.CLOUDFLARE_API_TOKEN;
+// Upload a preview using the production binding and secrets. Do not route
+// production traffic to the uploaded version.
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 const voice = process.env.PROBE_VOICE;
-if (!account || !/^[0-9a-f]{32}$/i.test(account) || !token || !voice || !/^[a-z0-9_-]{1,64}$/i.test(voice)) {
-  throw new Error('Cloudflare account, token and valid voice ID required');
+if (!voice || !/^[a-z0-9_-]{1,64}$/i.test(voice)) throw new Error('Valid voice ID required');
+const base = new URL(process.env.WORKER_URL);
+if (base.protocol !== 'https:' || !base.hostname.endsWith('.workers.dev')) {
+  throw new Error('A workers.dev URL is required for voice previews');
 }
-const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/ai/run`, {
-  method: 'POST',
-  redirect: 'error',
-  signal: AbortSignal.timeout(30_000),
-  headers: {
-    authorization: `Bearer ${token}`,
-    'content-type': 'application/json',
-    'cf-aig-gateway-id': 'default',
-    'cf-aig-collect-log': 'false',
-    'cf-aig-skip-cache': 'true',
-  },
-  body: JSON.stringify({ model: 'inworld/tts-2', input: {
-    text: 'こんにちは。音声の確認です。', voice_id: voice,
-    output_format: 'mp3', temperature: 1, timestamp_type: 'none',
-  } }),
-});
-const payload = await response.json().catch(() => null);
-const result = payload?.result?.result ?? payload?.result ?? payload;
-const generated = response.ok && typeof result?.audio === 'string' && result.audio.length > 0;
-const errors = [payload?.errors, payload?.result?.errors].flat().filter(error => typeof error?.code === 'number');
-console.log(JSON.stringify({ voice, status: response.status, generated, errors: errors.map(error => ({
-  code: error.code,
-  // Report whether the voice field was rejected without printing raw provider output.
-  voice_field: typeof error.message === 'string' && /voice[_ ]id|speaker/i.test(error.message),
-})) }));
-if (!generated) throw new Error('AI Gateway did not generate audio for the requested voice');
+const dir = await mkdtemp(join(tmpdir(), 'cloudcord-voice-check-'));
+try {
+  const output = join(dir, 'wrangler.jsonl');
+  const upload = spawnSync(process.execPath, [
+    'node_modules/wrangler/bin/wrangler.js', 'versions', 'upload',
+    '--var', `TTS_VOICE:${voice}`, '--var', 'TTS_ENGINE:inworld',
+  ], { cwd: 'worker', stdio: 'inherit', env: { ...process.env, WRANGLER_OUTPUT_FILE_PATH: output } });
+  if (upload.status !== 0) throw new Error('Worker preview upload failed');
+  const entries = (await readFile(output, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  const version = entries.findLast(entry => entry.type === 'version-upload');
+  if (!version?.preview_url) throw new Error('No Worker version URL was returned');
+  const preview = new URL(version.preview_url);
+  if (preview.protocol !== 'https:' || !preview.hostname.endsWith(`-${base.hostname}`) ||
+      preview.username || preview.password || preview.port) throw new Error('Unexpected Worker version URL');
+  console.log(`Checking Inworld voice: ${voice}`);
+  const check = spawnSync(process.execPath, ['scripts/worker-speech-check.mjs'], {
+    stdio: 'inherit', env: { ...process.env, WORKER_URL: preview.origin, SPEECH_ENGINE: 'inworld' },
+  });
+  if (check.status !== 0) throw new Error('Voice preview did not generate valid audio');
+} finally {
+  await rm(dir, { recursive: true, force: true });
+}
