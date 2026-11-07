@@ -74,7 +74,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Generate MP3 from a deterministic sine fixture, then use the production conversion.
-	cmd := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2", "-f", "mp3", "pipe:1")
+	cmd := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "mp3", "pipe:1")
 	data, e := cmd.Output()
 	if e != nil {
 		t.Fatal(e)
@@ -87,7 +87,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(frames) < 10 || len(frames) > 20 {
+	if len(frames) < 40 || len(frames) > 45 {
 		t.Fatalf("unexpected duration: %d frames", len(frames))
 	}
 	for _, f := range frames {
@@ -131,7 +131,7 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2", "-f", "wav", "pipe:1").Output()
+	data, err := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "wav", "pipe:1").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,8 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	frames, err := collect(ctx, stream)
-	if err != nil || len(frames) < 10 || len(frames) > 20 {
+	// One second at 1.2× is about 42 packets of 20 ms each.
+	if err != nil || len(frames) < 40 || len(frames) > 45 {
 		t.Fatalf("WAV conversion: %d frames, %v", len(frames), err)
 	}
 	for _, frame := range frames {

@@ -1,12 +1,5 @@
-import { createLanguageDetector } from './language.ts';
-import type { LanguageInput } from './language.ts';
-
-export type SpeechInput = {
-  text: string; voice_id: string; output_format: 'mp3';
-  temperature: number; timestamp_type: 'none';
-};
 export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
-type SpeechEngine = 'inworld' | 'grok' | 'minimax' | 'gemini' | 'gemini-lite';
+type SpeechEngine = 'grok' | 'minimax' | 'gemini' | 'gemini-lite';
 type GrokInput = {
   text: string; language: 'auto'; voice_id: string;
   output_format: { codec: 'mp3'; sample_rate: 24000; bit_rate: 128000 };
@@ -14,7 +7,7 @@ type GrokInput = {
 type MiniMaxInput = { text: string; voice_id: string; format: 'mp3'; pitch: number; speed: number; volume: number };
 type GeminiInput = { text: string; voice: string };
 export interface Env {
-  AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput | MiniMaxInput | GeminiInput, options?: GatewayOptions): Promise<unknown> };
+  AI: { run(model: string, input: GrokInput | MiniMaxInput | GeminiInput, options?: GatewayOptions): Promise<unknown> };
   BOT_API_TOKEN: string;
   AI_GATEWAY_ID: string;
   TTS_VOICE: string;
@@ -22,9 +15,7 @@ export interface Env {
   TTS_PREVIEW_DIAGNOSTICS?: string;
   GROK_VOICE?: string;
 }
-const detectLanguage = createLanguageDetector();
 const MAX_AUDIO = 5 * 1024 * 1024;
-const MODEL = 'inworld/tts-2';
 class APIError extends Error {
   status: number;
   code: string;
@@ -91,7 +82,7 @@ export async function decodeAudio(output: unknown, signal?: AbortSignal): Promis
   audioMIME(data);
   return data;
 }
-type AudioStream = { stream: ReadableStream<Uint8Array>; mime: 'audio/mpeg' | 'audio/wav'; language?: string };
+type AudioStream = { stream: ReadableStream<Uint8Array>; mime: 'audio/mpeg' | 'audio/wav' };
 function isMP3(data: Uint8Array): boolean {
   return (data[0] === 0x49 && data[1] === 0x44 && data[2] === 0x33) ||
     (data[0] === 0xff && (data[1] & 0xe0) === 0xe0);
@@ -217,18 +208,7 @@ async function authorized(header: string | null, token: string): Promise<boolean
   for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
   return difference === 0;
 }
-// Tags disambiguate Han characters without splitting the audio or converting
-// English to kana. Escape input markup so it cannot override our language tags.
-export function speechText(text: string, language: string): string {
-  const escaped = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  if (language === 'en') return escaped;
-  const code = language === 'zh' ? 'zh-CN' : 'ja-JP';
-  const tagged = escaped.replace(/\p{Script=Han}+/gu, word => `<lang lang="${code}">${word}</lang>`);
-  // Alternating scripts can otherwise expand a valid 200-character post past
-  // the catalog endpoint's 2,000-character limit. Keep its language hint.
-  return tagged.length <= 2000 ? tagged : `<lang lang="${code}">${escaped}</lang>`;
-}
-type SpeechTimings = { language_ms: number; synthesis_ms: number; audio_start_ms: number };
+type SpeechTimings = { synthesis_ms: number; audio_start_ms: number };
 
 async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream & { timings: SpeechTimings }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -237,9 +217,6 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
   try {
     return await Promise.race([
       (async () => {
-        const started = Date.now();
-        const lang = engine === 'inworld' ? await detectLanguage(text, env.AI, 'ja') : 'auto';
-        if (controller.signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
         const gateway: GatewayOptions = { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } };
         const synthesisStarted = Date.now();
         let output: unknown;
@@ -252,20 +229,14 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
           output = await env.AI.run('minimax/speech-2.8-turbo', {
             text, voice_id: env.TTS_VOICE, format: 'mp3', pitch: 0, speed: 1, volume: 1,
           }, gateway);
-        } else if (engine === 'gemini' || engine === 'gemini-lite') {
-          const model = engine === 'gemini-lite' ? 'google/gemini-3.8-flash-lite-tts' : 'google/gemini-3.8-flash-tts';
-          output = await env.AI.run(model, { text, voice: env.TTS_VOICE }, gateway);
         } else {
-          output = await env.AI.run(MODEL, {
-            text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Hana',
-            output_format: 'mp3', temperature: 1, timestamp_type: 'none',
-          }, gateway);
+          const model = engine === 'gemini-lite' ? 'google/gemini-3.8-flash-lite-tts' : 'google/gemini-3.8-flash-tts';
+          output = await env.AI.run(model, { text, voice: env.TTS_VOICE || 'Kore' }, gateway);
         }
         const audioStarted = Date.now();
         stage = 'audio';
         const audio = await audioStream(output, controller.signal);
-        return { ...audio, language: lang, timings: {
-          language_ms: synthesisStarted - started,
+        return { ...audio, timings: {
           synthesis_ms: audioStarted - synthesisStarted,
           audio_start_ms: Date.now() - audioStarted,
         } };
@@ -313,13 +284,13 @@ export default {
         throw new APIError(400, 'invalid_input', 'Require a snowflake string, 1–200 characters, and language ja');
       }
       const override = new URL(request.url).searchParams.get('engine');
-      if (override !== null && override !== 'inworld' && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
-      const selected = override ?? env.TTS_ENGINE ?? 'inworld';
-      if (selected !== 'inworld' && selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini' && selected !== 'gemini-lite') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      if (override !== null && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      const selected = override ?? env.TTS_ENGINE ?? 'gemini';
+      if (selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini' && selected !== 'gemini-lite') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
-      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected, ...data.timings }));
-      const timing = `language;dur=${data.timings.language_ms}, synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;
-      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language!, 'X-Speech-Engine': selected, 'Server-Timing': timing } });
+      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, engine: selected, ...data.timings }));
+      const timing = `synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;
+      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': 'auto', 'X-Speech-Engine': selected, 'Server-Timing': timing } });
     } catch (error) {
       const failure = error instanceof APIError ? error : new APIError(502, 'tts_failed', 'TTS generation failed');
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));

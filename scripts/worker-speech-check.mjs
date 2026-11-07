@@ -5,16 +5,15 @@ const token = process.env.CLOUDFLARE_BOT_API_TOKEN;
 if (!base || !token || new URL(base).protocol !== 'https:') throw new Error('HTTPS Worker URL and shared token required');
 const url = new URL(`${base.replace(/\/$/, '')}/v1/tts`);
 const engine = process.env.SPEECH_ENGINE || 'configured';
-if (!['configured', 'inworld', 'grok'].includes(engine)) throw new Error('Unsupported speech engine');
+if (!['configured', 'grok'].includes(engine)) throw new Error('Unsupported speech engine');
 if (engine !== 'configured') url.searchParams.set('engine', engine);
 const samples = [
   ['Japanese', 'こんにちは。音声の確認です。'],
   ['Chinese', '你好，这是语音测试。'],
   ['English', 'Hello. This is a speech test.'],
-  ['Mixed', ['minimax', 'gemini', 'gemini-lite'].includes(process.env.PROBE_ENGINE)
-    ? 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。'
-    : '読み上げの test を行います。你好。Hello.'],
-  ['Han with classification', '歡迎使用 Discord。'],
+  ['Korean', '안녕하세요. 음성을 확인하고 있습니다.'],
+  ['Mixed', 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。'],
+  ['Han', '歡迎使用 Discord。'],
 ];
 for (const [name, text] of samples) {
   const start = Date.now();
@@ -50,7 +49,7 @@ for (const [name, text] of samples) {
   const wav = count === 12 && new TextDecoder().decode(prefix.subarray(0, 4)) === 'RIFF' && new TextDecoder().decode(prefix.subarray(8)) === 'WAVE';
   if (!mp3 && !wav) throw new Error(`${name}: invalid audio signature`);
   const timings = {};
-  for (const match of (response.headers.get('server-timing') || '').matchAll(/\b(language|synthesis|audio_start);dur=(\d+)\b/g)) {
+  for (const match of (response.headers.get('server-timing') || '').matchAll(/\b(synthesis|audio_start);dur=(\d+)\b/g)) {
     timings[`${match[1]}_ms`] = Number(match[2]);
   }
   console.log(JSON.stringify({ sample: name, engine: response.headers.get('x-speech-engine') || engine, bytes: length, first_audio_ms: firstAudio, duration_ms: Date.now() - start, format: mp3 ? 'mp3' : 'wav', ...timings }));

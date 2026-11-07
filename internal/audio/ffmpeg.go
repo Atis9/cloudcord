@@ -24,7 +24,8 @@ type FFmpeg struct {
 
 // Short normalization windows keep streaming startup bounded. Limit gain to 20 dB,
 // preserve quiet pauses, and disable the limiter's automatic makeup gain.
-const speechFilter = "dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.005," +
+const speechFilter = "atempo=1.2," +
+	"dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.005," +
 	"acompressor=threshold=0.25:ratio=3:attack=5:release=100," +
 	"alimiter=limit=0.89:level=0:latency=1"
 

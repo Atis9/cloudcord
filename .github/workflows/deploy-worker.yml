@@ -3,18 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       verify_speech:
-        description: 'Generate short Japanese, Chinese, English and mixed speech samples (billable)'
+        description: 'Generate short Japanese, Chinese, English, Korean and mixed speech samples (billable)'
         type: boolean
         default: false
       speech_engine:
         description: 'Engine to verify; does not change the default engine'
         type: choice
-        options: [configured, inworld, grok]
+        options: [configured, grok]
         default: configured
-      probe_inworld_voice:
-        description: 'Check an Inworld voice through AI Gateway without deploying (billable)'
-        type: string
-        default: ''
       probe_minimax_voice:
         description: 'Check a MiniMax voice through AI Gateway without deploying (billable)'
         type: string
@@ -45,7 +41,7 @@ jobs:
       CLOUDFLARE_BOT_API_TOKEN: ${{ secrets.CLOUDFLARE_BOT_API_TOKEN }}
       WRANGLER_SEND_METRICS: 'false'
       WORKER_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
-      PROBE_ONLY: ${{ inputs.probe_inworld_voice != '' || inputs.probe_minimax_voice != '' || inputs.probe_gemini_voice != '' }}
+      PROBE_ONLY: ${{ inputs.probe_minimax_voice != '' || inputs.probe_gemini_voice != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -66,13 +62,11 @@ jobs:
       - name: Probe voice without deployment
         if: env.PROBE_ONLY == 'true'
         env:
-          INWORLD_VOICE: ${{ inputs.probe_inworld_voice }}
           MINIMAX_VOICE: ${{ inputs.probe_minimax_voice }}
           GEMINI_VOICE: ${{ inputs.probe_gemini_voice }}
           GEMINI_ENGINE: ${{ inputs.probe_gemini_engine }}
         run: |
           set --
-          if [ -n "$INWORLD_VOICE" ]; then set -- "$@" inworld "$INWORLD_VOICE"; fi
           if [ -n "$MINIMAX_VOICE" ]; then set -- "$@" minimax "$MINIMAX_VOICE"; fi
           if [ -n "$GEMINI_VOICE" ]; then set -- "$@" "$GEMINI_ENGINE" "$GEMINI_VOICE"; fi
           test "$#" -eq 2 || { echo 'Select one voice to probe'; exit 1; }

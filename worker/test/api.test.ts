@@ -1,40 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { decodeAudio, speechText } from '../src/index.ts';
+import worker, { decodeAudio } from '../src/index.ts';
 import type { Env } from '../src/index.ts';
 const audio = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]);
 function request(body: unknown = { guild_id: '123456789012345678', text: 'こんにちは', language: 'ja' }, token = 'secret'): Request {
   return new Request('https://example.com/v1/tts', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 }
-function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', AI_GATEWAY_ID: 'default', TTS_VOICE: 'Hana', AI: { run } }; }
-test('all languages and mixed posts use one Inworld synthesis with original English', async () => {
-  for (const [text, language] of [
-    ['こんにちは', 'ja'], ['Hello, this is a test.', 'en'],
-    ['読み上げの test を行います', 'ja'], ['你好，这是中文语音测试。', 'zh'],
-    ['这 API を試します。', 'zh'], ['12345', 'ja'],
-  ]) {
+function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', AI_GATEWAY_ID: 'default', TTS_VOICE: 'Kore', AI: { run } }; }
+test('the default engine sends each post to Gemini once with no separate language detection', async () => {
+  for (const text of ['こんにちは', 'Hello, this is a test.', '読み上げの test を行います', '你好，这是中文语音测试。', '東京', '12345']) {
     let calls = 0;
-    const response = await worker.fetch(request({guild_id:'12',text,language:'ja'}), environment(async (model,input,options) => {
+    const response = await worker.fetch(request({ guild_id: '12', text, language: 'ja' }), environment(async (model, input, options) => {
       calls++;
-      assert.equal(model,'inworld/tts-2');
-      assert.deepEqual(input,{text:speechText(text,language),voice_id:'Hana',output_format:'mp3',temperature:1,timestamp_type:'none'});
-      assert.deepEqual(options,{gateway:{id:'default',skipCache:true,collectLog:false}});
+      assert.equal(model, 'google/gemini-3.8-flash-tts');
+      assert.deepEqual(input, { text, voice: 'Kore' });
+      assert.deepEqual(options, { gateway: { id: 'default', skipCache: true, collectLog: false } });
       return audio;
     }));
-    assert.equal(response.status,200);
-    assert.equal(response.headers.get('x-speech-language'),language);
-    assert.equal(response.headers.get('x-kana-source'),null);
-    assert.deepEqual(new Uint8Array(await response.arrayBuffer()),audio);
-    assert.equal(calls,1);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-speech-language'), 'auto');
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), audio);
+    assert.equal(calls, 1);
   }
-});
-test('Han hints preserve simplified priority and English while escaping user markup', () => {
-  assert.equal(speechText('这是 test です','zh'),'<lang lang="zh-CN">这是</lang> test です');
-  assert.equal(speechText('東京 API を使います','ja'),'<lang lang="ja-JP">東京</lang> API を<lang lang="ja-JP">使</lang>います');
-  assert.equal(speechText('<lang lang="en">東京</lang> &','ja'),'&lt;lang lang="en"&gt;<lang lang="ja-JP">東京</lang>&lt;/lang&gt; &amp;');
-  const alternating = '汉a'.repeat(100);
-  assert.equal(speechText(alternating, 'zh'), `<lang lang="zh-CN">${alternating}</lang>`);
-  assert.ok(speechText(alternating, 'zh').length <= 2000);
 });
 const mixedText = 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。';
 for (const [engine, voice, modelName, expected] of [
@@ -174,30 +161,6 @@ test('timeout before the first audio closes the upstream stream', async t => {
   assert.equal(cancelled, true);
 });
 
-test('ambiguous Han still uses Clef, then the same multilingual TTS', async () => {
-  const calls:string[]=[];
-  const response=await worker.fetch(request({guild_id:'12',text:'東京',language:'ja'}),environment(async(model,input) => {
-    calls.push(model);
-    if(model.includes('clef'))return {answers:{language:{choice:'ja',confidence:0.95}}};
-    assert.equal(input.text,'<lang lang="ja-JP">東京</lang>');
-    return audio;
-  }));
-  assert.equal(response.status,200);
-  assert.deepEqual(calls,['@cf/cloudflare/clef','inworld/tts-2']);
-  await response.body?.cancel();
-});
-test('language detection consumes the shared synthesis budget', async t => {
-  t.mock.timers.enable({apis:['Date','setTimeout'],now:0});
-  let detection!:()=>void, speech!:()=>void;
-  const detecting=new Promise<void>(resolve=>{detection=resolve;});
-  const speaking=new Promise<void>(resolve=>{speech=resolve;});
-  const pending=worker.fetch(request({guild_id:'12',text:'中文共享時限。',language:'ja'}),environment(async model=>{
-    if(model.includes('clef')){detection();return new Promise(resolve=>setTimeout(()=>resolve({answers:{language:{choice:'zh',confidence:0.99}}}),2000));}
-    speech();return new Promise(()=>{});
-  }));
-  await detecting;t.mock.timers.tick(2000);await speaking;
-  t.mock.timers.tick(23000);assert.equal((await pending).status,504);
-});
 test('signed R2 audio downloads stream without forwarding credentials', async t => {
   let cancelled=false;
   t.mock.method(globalThis,'fetch',async (url:URL,init:RequestInit)=>{
