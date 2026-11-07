@@ -221,21 +221,18 @@ func TestFFmpegStartsBeforeStreamingWAVEnds(t *testing.T) {
 	path := levelFFmpegPath(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	wav := levelWAV(2, func(i int) float64 { return 0.1 * math.Sin(2*math.Pi*440*float64(i)/48000) })
+	wav := levelWAV(1, func(i int) float64 { return 0.1 * math.Sin(2*math.Pi*440*float64(i)/24000) })
+	binary.LittleEndian.PutUint32(wav[24:28], 24000)
+	binary.LittleEndian.PutUint32(wav[28:32], 48000)
 	// The Worker sends unknown RIFF and data sizes and appends the second
 	// segment when its synthesis finishes.
 	binary.LittleEndian.PutUint32(wav[4:8], 0xffffffff)
 	binary.LittleEndian.PutUint32(wav[40:44], 0xffffffff)
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
 	continueAudio := make(chan struct{})
 	go func() {
-		const boundary = 44 + 48000*2
+		const boundary = 44 + 24000*2
 		if _, err := writer.Write(wav[:boundary]); err != nil {
 			writer.CloseWithError(err)
 			return
@@ -249,6 +246,11 @@ func TestFFmpegStartsBeforeStreamingWAVEnds(t *testing.T) {
 		_, err := writer.Write(wav[boundary:])
 		writer.CloseWithError(err)
 	}()
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
 	firstCtx, firstCancel := context.WithTimeout(ctx, 2*time.Second)
 	defer firstCancel()
 	first, err := stream.Next(firstCtx)
