@@ -12,6 +12,11 @@ on:
         description: 'Published GHCR image digest (sha256:...)'
         required: true
         type: string
+    secrets:
+      DISCORD_TOKEN:
+        required: true
+      CLOUDFLARE_BOT_API_TOKEN:
+        required: true
 defaults:
   run:
     shell: bash
