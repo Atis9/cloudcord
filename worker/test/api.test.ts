@@ -40,6 +40,7 @@ const mixedText = 'みんなで「Hello」「你好」「안녕하세요」と�
 for (const [engine, voice, modelName, expected] of [
   ['minimax', 'Japanese_CalmLady', 'minimax/speech-2.8-turbo', { text: mixedText, voice_id: 'Japanese_CalmLady', format: 'mp3', pitch: 0, speed: 1, volume: 1 }],
   ['gemini', 'Kore', 'google/gemini-3.8-flash-tts', { text: mixedText, voice: 'Kore' }],
+  ['gemini-lite', 'Kore', 'google/gemini-3.8-flash-lite-tts', { text: mixedText, voice: 'Kore' }],
 ] as const) {
   test(`${engine} submits four languages as one unmodified request using the configured voice`, async () => {
     let calls = 0;

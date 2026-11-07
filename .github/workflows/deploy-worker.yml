@@ -20,9 +20,14 @@ on:
         type: string
         default: ''
       probe_gemini_voice:
-        description: 'Check a Gemini 3.8 Flash TTS voice through AI Gateway without deploying (billable)'
+        description: 'Check a Gemini 3.8 TTS voice through AI Gateway without deploying (billable)'
         type: string
         default: ''
+      probe_gemini_engine:
+        description: 'Gemini model to use for the voice probe'
+        type: choice
+        options: [gemini, gemini-lite]
+        default: gemini
 permissions:
   contents: read
 concurrency:
@@ -64,11 +69,12 @@ jobs:
           INWORLD_VOICE: ${{ inputs.probe_inworld_voice }}
           MINIMAX_VOICE: ${{ inputs.probe_minimax_voice }}
           GEMINI_VOICE: ${{ inputs.probe_gemini_voice }}
+          GEMINI_ENGINE: ${{ inputs.probe_gemini_engine }}
         run: |
           set --
           if [ -n "$INWORLD_VOICE" ]; then set -- "$@" inworld "$INWORLD_VOICE"; fi
           if [ -n "$MINIMAX_VOICE" ]; then set -- "$@" minimax "$MINIMAX_VOICE"; fi
-          if [ -n "$GEMINI_VOICE" ]; then set -- "$@" gemini "$GEMINI_VOICE"; fi
+          if [ -n "$GEMINI_VOICE" ]; then set -- "$@" "$GEMINI_ENGINE" "$GEMINI_VOICE"; fi
           test "$#" -eq 2 || { echo 'Select one voice to probe'; exit 1; }
           PROBE_ENGINE="$1" PROBE_VOICE="$2" node scripts/worker-voice-check.mjs
       - name: Deploy tested Worker with shared API secret

@@ -11,7 +11,7 @@ const samples = [
   ['Japanese', 'こんにちは。音声の確認です。'],
   ['Chinese', '你好，这是语音测试。'],
   ['English', 'Hello. This is a speech test.'],
-  ['Mixed', ['minimax', 'gemini'].includes(process.env.PROBE_ENGINE)
+  ['Mixed', ['minimax', 'gemini', 'gemini-lite'].includes(process.env.PROBE_ENGINE)
     ? 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。'
     : '読み上げの test を行います。你好。Hello.'],
   ['Han with classification', '歡迎使用 Discord。'],
