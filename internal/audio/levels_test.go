@@ -65,6 +65,25 @@ func TestFFmpegLevelsSilenceShortSpeechAndTransients(t *testing.T) {
 	}
 }
 
+func TestFFmpegDoesNotBoostQuietAudioBetweenPhrases(t *testing.T) {
+	path := levelFFmpegPath(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	samples := convertAndDecode(t, ctx, path, levelWAV(3, func(i int) float64 {
+		amplitude := 0.12
+		if i >= 48000 && i < 96000 {
+			amplitude = 0.012
+		}
+		return amplitude * math.Sin(2*math.Pi*440*float64(i)/48000)
+	}))
+	// Sample the middle of each region after the 1.2x tempo adjustment.
+	speech, _ := sampleLevels(samples[14400:24000])
+	quiet, _ := sampleLevels(samples[52800:67200])
+	if speech < 0.1 || quiet > 0.02 {
+		t.Fatalf("expected normalized speech and a quiet pause, got RMS %g and %g", speech, quiet)
+	}
+}
+
 func levelFFmpegPath(t *testing.T) string {
 	t.Helper()
 	if path := os.Getenv("FFMPEG_PATH"); path != "" {
