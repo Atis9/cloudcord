@@ -1,6 +1,11 @@
 name: Deploy Worker
 on:
   workflow_dispatch:
+    inputs:
+      verify_speech:
+        description: 'Generate short Japanese, Chinese, English and mixed speech samples (billable)'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -44,3 +49,6 @@ jobs:
         env:
           WORKER_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: node scripts/worker-health.mjs
+      - name: Check speech generation
+        if: inputs.verify_speech
+        run: node scripts/worker-speech-check.mjs
