@@ -19,6 +19,7 @@ export interface Env {
   AI_GATEWAY_ID: string;
   TTS_VOICE: string;
   TTS_ENGINE?: SpeechEngine;
+  TTS_PREVIEW_DIAGNOSTICS?: string;
   GROK_VOICE?: string;
 }
 const detectLanguage = createLanguageDetector();
@@ -28,6 +29,7 @@ class APIError extends Error {
   status: number;
   code: string;
   retryAfter: string;
+  diagnostic?: string;
   constructor(status: number, code: string, message: string, retryAfter = "60") {
     super(message); this.status = status; this.code = code; this.retryAfter = retryAfter;
   }
@@ -80,8 +82,9 @@ export async function decodeAudio(output: unknown, signal?: AbortSignal): Promis
   } else if (output instanceof Uint8Array) {
     data = output;
   } else if (typeof output === 'object' && output !== null && 'audio' in output && typeof output.audio === 'string') {
-    if (output.audio.length > Math.ceil(MAX_AUDIO * 4 / 3) + 4) throw new Error('size limit');
-    const decoded = atob(output.audio);
+    const encoded = output.audio.replace(/^data:audio\/(?:wav|mpeg);base64,/i, '');
+    if (encoded.length > Math.ceil(MAX_AUDIO * 4 / 3) + 4) throw new Error('size limit');
+    const decoded = atob(encoded);
     data = Uint8Array.from(decoded, c => c.charCodeAt(0));
   } else { throw new Error('unsupported AI output'); }
   if (data.length === 0 || data.length > MAX_AUDIO) throw new Error('invalid audio size');
@@ -229,6 +232,7 @@ type SpeechTimings = { language_ms: number; synthesis_ms: number; audio_start_ms
 
 async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream & { timings: SpeechTimings }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stage = 'model';
   const controller = new AbortController();
   try {
     return await Promise.race([
@@ -257,6 +261,7 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
           }, gateway);
         }
         const audioStarted = Date.now();
+        stage = 'audio';
         const audio = await audioStream(output, controller.signal);
         return { ...audio, language: lang, timings: {
           language_ms: synthesisStarted - started,
@@ -273,7 +278,13 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
     if (typeof error === 'object' && error !== null && 'status' in error && error.status === 429) {
       throw new APIError(429, 'tts_rate_limited', 'TTS temporarily rate limited');
     }
-    throw new APIError(502, 'tts_failed', 'TTS generation failed');
+    const failure = new APIError(502, 'tts_failed', 'TTS generation failed');
+    if (env.TTS_PREVIEW_DIAGNOSTICS === 'true') {
+      const reason = error instanceof Error ? error.message : '';
+      const audioReasons = ['untrusted audio URL', 'audio download failed', 'invalid audio signature', 'unsupported AI output', 'incomplete AI output', 'size limit'];
+      failure.diagnostic = stage === 'audio' && audioReasons.includes(reason) ? `${stage}: ${reason}` : stage;
+    }
+    throw failure;
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 export default {
@@ -313,7 +324,7 @@ export default {
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));
       return Response.json({ error: { code: failure.code, message: failure.message }, request_id: requestID }, {
         status: failure.status,
-        headers: { ...headers, ...(failure.status === 429 ? { 'Retry-After': failure.retryAfter } : {}), ...(failure.status === 405 ? { Allow: 'POST' } : {}) },
+        headers: { ...headers, ...(failure.diagnostic ? { 'X-TTS-Preview-Diagnostic': failure.diagnostic } : {}), ...(failure.status === 429 ? { 'Retry-After': failure.retryAfter } : {}), ...(failure.status === 405 ? { Allow: 'POST' } : {}) },
       });
     }
   },

@@ -26,7 +26,8 @@ for (const [name, text] of samples) {
   if (!response.ok) {
     const failure = await response.json().catch(() => null);
     const code = typeof failure?.error?.code === 'string' && /^(grok|tts)_[a-z_0-9]+$/.test(failure.error.code) ? failure.error.code : 'unknown';
-    throw new Error(`${name}: HTTP ${response.status}, ${code}; request ID ${response.headers.get('x-request-id') || 'unknown'}`);
+    const diagnostic = response.headers.get('x-tts-preview-diagnostic');
+    throw new Error(`${name}: HTTP ${response.status}, ${code}${diagnostic ? ` (${diagnostic})` : ''}; request ID ${response.headers.get('x-request-id') || 'unknown'}`);
   }
   if (!response.body) throw new Error(`${name}: empty response`);
   const reader = response.body.getReader();

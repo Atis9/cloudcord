@@ -18,7 +18,7 @@ try {
   const output = join(dir, 'wrangler.jsonl');
   const upload = spawnSync(process.execPath, [
     'node_modules/wrangler/bin/wrangler.js', 'versions', 'upload',
-    '--var', `TTS_VOICE:${voice}`, '--var', `TTS_ENGINE:${engine}`,
+    '--var', `TTS_VOICE:${voice}`, '--var', `TTS_ENGINE:${engine}`, '--var', 'TTS_PREVIEW_DIAGNOSTICS:true',
   ], { cwd: 'worker', stdio: 'inherit', env: { ...process.env, WRANGLER_OUTPUT_FILE_PATH: output } });
   if (upload.status !== 0) throw new Error('Worker preview upload failed');
   const entries = (await readFile(output, 'utf8')).trim().split('\n').map(line => JSON.parse(line));

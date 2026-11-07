@@ -66,6 +66,13 @@ test('base64 WAV remains supported', async () => {
   assert.equal(response.headers.get('content-type'),'audio/wav');
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()),wav);
 });
+test('WAV data URLs are decoded and validated', async () => {
+  const wav = 'RIFF1234WAVEaudio';
+  const response = await worker.fetch(request(), environment(async () => ({ audio: `data:audio/wav;base64,${btoa(wav)}` })));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'audio/wav');
+  assert.equal(await response.text(), wav);
+});
 test('fragmented WAV header is validated without changing or buffering the audio body', async () => {
   const wav = new TextEncoder().encode('RIFF1234WAVEaudio');
   let source: ReadableStreamDefaultController<Uint8Array>;
