@@ -149,6 +149,10 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 		if opusSamples(frame) != 960 {
 			t.Fatal("not a 20ms packet")
 		}
+		// 64,000 bits/s * 20 ms / 8 = 160 bytes of Opus payload.
+		if len(frame) > 160 {
+			t.Fatalf("Opus payload exceeds 64 kbps: %d bytes in 20 ms", len(frame))
+		}
 	}
 }
 
