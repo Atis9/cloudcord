@@ -1,3 +1,5 @@
+import { readPCM, splitLongSpeech, streamingWAVHeader } from './long-speech.ts';
+
 export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
 type SpeechEngine = 'grok' | 'minimax' | 'gemini' | 'gemini-lite';
 type GrokInput = {
@@ -30,6 +32,7 @@ async function readBounded(stream: ReadableStream<Uint8Array>, limit: number, si
   const reader = stream.getReader();
   const abort = () => { void reader.cancel().catch(() => {}); };
   signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   const chunks: Uint8Array[] = [];
   let length = 0;
   try {
@@ -210,11 +213,13 @@ async function authorized(header: string | null, token: string): Promise<boolean
   return difference === 0;
 }
 type SpeechTimings = { synthesis_ms: number; audio_start_ms: number };
+type SynthesizedAudio = AudioStream & { timings: SpeechTimings };
 
-async function synthesize(env: Env, text: string, engine: SpeechEngine, voice?: string): Promise<AudioStream & { timings: SpeechTimings }> {
+async function synthesize(env: Env, text: string, engine: SpeechEngine, voice?: string, parentSignal?: AbortSignal): Promise<SynthesizedAudio> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stage = 'model';
   const controller = new AbortController();
+  const signal = parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal;
   try {
     return await Promise.race([
       (async () => {
@@ -236,7 +241,7 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine, voice?: 
         }
         const audioStarted = Date.now();
         stage = 'audio';
-        const audio = await audioStream(output, controller.signal);
+        const audio = await audioStream(output, signal);
         return { ...audio, timings: {
           synthesis_ms: audioStarted - synthesisStarted,
           audio_start_ms: Date.now() - audioStarted,
@@ -260,6 +265,49 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine, voice?: 
     throw failure;
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
+
+async function synthesizeLongSpeech(env: Env, parts: [string, string], voice: string | undefined, request: Request, requestID: string): Promise<SynthesizedAudio> {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, request.signal]);
+  if (signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
+  const render = async (text: string) => {
+    const audio = await synthesize(env, text, 'gemini-lite', voice, signal);
+    const wav = await readBounded(audio.stream, MAX_AUDIO, signal);
+    return { pcm: readPCM(wav), timings: audio.timings };
+  };
+  const opening = render(parts[0]);
+  // Attach rejection handling now, since either synthesis can finish first.
+  const continuation = render(parts[1]).catch(() => undefined);
+  try {
+    const first = await opening;
+    const header = streamingWAVHeader(first.pcm);
+    return {
+      mime: 'audio/wav', timings: first.timings,
+      stream: new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(header);
+          stream.enqueue(first.pcm.samples);
+        },
+        async pull(stream) {
+          const second = await continuation;
+          if (signal.aborted || !second || first.pcm.channels !== second.pcm.channels || first.pcm.sampleRate !== second.pcm.sampleRate ||
+              header.byteLength + first.pcm.samples.byteLength + second.pcm.samples.byteLength > MAX_AUDIO) {
+            if (!signal.aborted) console.warn(JSON.stringify({ event: 'tts_continuation_failed', request_id: requestID }));
+            stream.error(new Error('TTS continuation failed'));
+            return;
+          }
+          stream.enqueue(second.pcm.samples);
+          stream.close();
+        },
+        cancel() { controller.abort(); },
+      }),
+    };
+  } catch (error) {
+    controller.abort();
+    throw error;
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestID = crypto.randomUUID();
@@ -292,10 +340,12 @@ export default {
       if (voice !== undefined && (typeof voice !== 'string' || !GEMINI_VOICES.has(voice) || (selected !== 'gemini' && selected !== 'gemini-lite'))) {
         throw new APIError(400, 'invalid_input', 'Unsupported speech voice');
       }
-      const data = await synthesize(env, value.text, selected, voice);
-      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, engine: selected, ...data.timings }));
+      const parts = selected === 'gemini-lite' ? splitLongSpeech(value.text) : undefined;
+      const data = parts ? await synthesizeLongSpeech(env, parts, voice, request, requestID) : await synthesize(env, value.text, selected, voice);
+      const chunks = parts ? 2 : 1;
+      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, engine: selected, chunks, ...data.timings }));
       const timing = `synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;
-      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': 'auto', 'X-Speech-Engine': selected, 'Server-Timing': timing } });
+      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': 'auto', 'X-Speech-Engine': selected, 'X-Speech-Chunks': String(chunks), 'Server-Timing': timing } });
     } catch (error) {
       const failure = error instanceof APIError ? error : new APIError(502, 'tts_failed', 'TTS generation failed');
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));

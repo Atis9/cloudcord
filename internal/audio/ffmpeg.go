@@ -49,7 +49,7 @@ func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStrea
 	child, cancel := context.WithCancel(ctx)
 	// Small probe/analyze limits are sufficient for the known audio formats. One
 	// Opus packet per Ogg page + flush prevents the default one-second page wait.
-	cmd := exec.CommandContext(child, f.Path, "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", format, "-probesize", "4096", "-analyzeduration", "0", "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "voip", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
+	cmd := exec.CommandContext(child, f.Path, "-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", format, "-probesize", "4096", "-analyzeduration", "0", "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "96k", "-vbr", "constrained", "-frame_duration", "20", "-application", "audio", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
 	cmd.Stdin = tts.LimitAudio(input.Stream)
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
