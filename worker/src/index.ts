@@ -6,14 +6,15 @@ export type SpeechInput = {
   temperature: number; timestamp_type: 'none';
 };
 export type GatewayOptions = { gateway: { id: string; skipCache: true; collectLog: false } };
-type SpeechEngine = 'inworld' | 'grok' | 'minimax';
+type SpeechEngine = 'inworld' | 'grok' | 'minimax' | 'gemini';
 type GrokInput = {
   text: string; language: 'auto'; voice_id: string;
   output_format: { codec: 'mp3'; sample_rate: 24000; bit_rate: 128000 };
 };
 type MiniMaxInput = { text: string; voice_id: string; format: 'mp3'; pitch: number; speed: number; volume: number };
+type GeminiInput = { text: string; voice: string };
 export interface Env {
-  AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput | MiniMaxInput, options?: GatewayOptions): Promise<unknown> };
+  AI: { run(model: string, input: SpeechInput | LanguageInput | GrokInput | MiniMaxInput | GeminiInput, options?: GatewayOptions): Promise<unknown> };
   BOT_API_TOKEN: string;
   AI_GATEWAY_ID: string;
   TTS_VOICE: string;
@@ -247,6 +248,8 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
           output = await env.AI.run('minimax/speech-2.8-turbo', {
             text, voice_id: env.TTS_VOICE, format: 'mp3', pitch: 0, speed: 1, volume: 1,
           }, gateway);
+        } else if (engine === 'gemini') {
+          output = await env.AI.run('google/gemini-3.8-flash-tts', { text, voice: env.TTS_VOICE }, gateway);
         } else {
           output = await env.AI.run(MODEL, {
             text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Hana',
@@ -300,7 +303,7 @@ export default {
       const override = new URL(request.url).searchParams.get('engine');
       if (override !== null && override !== 'inworld' && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const selected = override ?? env.TTS_ENGINE ?? 'inworld';
-      if (selected !== 'inworld' && selected !== 'grok' && selected !== 'minimax') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      if (selected !== 'inworld' && selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
       console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected, ...data.timings }));
       const timing = `language;dur=${data.timings.language_ms}, synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;

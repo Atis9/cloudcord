@@ -8,7 +8,7 @@ import { join } from 'node:path';
 const voice = process.env.PROBE_VOICE;
 if (!voice || !/^[a-z0-9_-]{1,64}$/i.test(voice)) throw new Error('Valid voice ID required');
 const engine = process.env.PROBE_ENGINE;
-if (engine !== 'inworld' && engine !== 'minimax') throw new Error('Unsupported voice probe engine');
+if (engine !== 'inworld' && engine !== 'minimax' && engine !== 'gemini') throw new Error('Unsupported voice probe engine');
 const base = new URL(process.env.WORKER_URL);
 if (base.protocol !== 'https:' || !base.hostname.endsWith('.workers.dev')) {
   throw new Error('A workers.dev URL is required for voice previews');

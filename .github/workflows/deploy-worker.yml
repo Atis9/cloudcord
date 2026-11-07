@@ -19,6 +19,10 @@ on:
         description: 'Check a MiniMax voice through AI Gateway without deploying (billable)'
         type: string
         default: ''
+      probe_gemini_voice:
+        description: 'Check a Gemini 3.8 Flash TTS voice through AI Gateway without deploying (billable)'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -36,6 +40,7 @@ jobs:
       CLOUDFLARE_BOT_API_TOKEN: ${{ secrets.CLOUDFLARE_BOT_API_TOKEN }}
       WRANGLER_SEND_METRICS: 'false'
       WORKER_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+      PROBE_ONLY: ${{ inputs.probe_inworld_voice != '' || inputs.probe_minimax_voice != '' || inputs.probe_gemini_voice != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -54,30 +59,28 @@ jobs:
       - run: npm run typecheck && npm test
         working-directory: worker
       - name: Probe voice without deployment
-        if: inputs.probe_inworld_voice != '' || inputs.probe_minimax_voice != ''
+        if: env.PROBE_ONLY == 'true'
         env:
           INWORLD_VOICE: ${{ inputs.probe_inworld_voice }}
           MINIMAX_VOICE: ${{ inputs.probe_minimax_voice }}
+          GEMINI_VOICE: ${{ inputs.probe_gemini_voice }}
         run: |
-          if [ -n "$INWORLD_VOICE" ] && [ -n "$MINIMAX_VOICE" ]; then
-            echo 'Select one voice to probe'
-            exit 1
-          fi
-          if [ -n "$MINIMAX_VOICE" ]; then
-            PROBE_ENGINE=minimax PROBE_VOICE="$MINIMAX_VOICE" node scripts/worker-voice-check.mjs
-          else
-            PROBE_ENGINE=inworld PROBE_VOICE="$INWORLD_VOICE" node scripts/worker-voice-check.mjs
-          fi
+          set --
+          if [ -n "$INWORLD_VOICE" ]; then set -- "$@" inworld "$INWORLD_VOICE"; fi
+          if [ -n "$MINIMAX_VOICE" ]; then set -- "$@" minimax "$MINIMAX_VOICE"; fi
+          if [ -n "$GEMINI_VOICE" ]; then set -- "$@" gemini "$GEMINI_VOICE"; fi
+          test "$#" -eq 2 || { echo 'Select one voice to probe'; exit 1; }
+          PROBE_ENGINE="$1" PROBE_VOICE="$2" node scripts/worker-voice-check.mjs
       - name: Deploy tested Worker with shared API secret
-        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == ''
+        if: env.PROBE_ONLY == 'false'
         run: node scripts/worker-deploy.mjs
       - name: Check deployed Worker (no inference)
-        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == ''
+        if: env.PROBE_ONLY == 'false'
         env:
           WORKER_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: node scripts/worker-health.mjs
       - name: Check speech generation
-        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == '' && inputs.verify_speech
+        if: env.PROBE_ONLY == 'false' && inputs.verify_speech
         env:
           SPEECH_ENGINE: ${{ inputs.speech_engine }}
         run: node scripts/worker-speech-check.mjs
