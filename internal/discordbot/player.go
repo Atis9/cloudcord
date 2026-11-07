@@ -3,6 +3,7 @@ package discordbot
 import (
 	"context"
 	"io"
+	"log/slog"
 	"time"
 
 	"cloudcord/internal/audio"
@@ -37,33 +38,58 @@ func (p voicePlayer) Play(ctx context.Context, frames audio.FrameStream, started
 		defer cancel()
 		_ = p.conn.SetSpeaking(stop, voice.SpeakingFlagNone)
 	}()
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-	sent := false
+	const frameInterval = time.Duration(voice.OpusFrameSizeMs) * time.Millisecond
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	start := time.Now()
+	var nextSend, lastSend time.Time
+	var firstGapAt, maxGap time.Duration
+	var gaps int
+	defer func() {
+		if gaps > 0 {
+			slog.Warn("voice_packet_gaps", "count", gaps, "first_gap_at_ms", firstGapAt.Milliseconds(), "max_gap_ms", maxGap.Milliseconds())
+		}
+	}()
 	// DisGo's UDP writer applies both DAVE and transport encryption.
 	send := func(frame []byte) error {
-		if sent {
+		if delay := time.Until(nextSend); delay > 0 {
+			timer.Reset(delay)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-ticker.C:
+			case <-timer.C:
 			}
-		} else if ctx.Err() != nil {
+		}
+		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		udp := p.conn.UDP()
 		deadline := time.Now().Add(time.Second)
 		if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 			deadline = d
 		}
-		if err := p.conn.UDP().SetWriteDeadline(deadline); err != nil {
+		if err := udp.SetWriteDeadline(deadline); err != nil {
 			return err
 		}
-		_, err := p.conn.UDP().Write(frame)
-		if err == nil {
-			sent = true
-			ticker.Reset(20 * time.Millisecond)
+		sentAt := time.Now()
+		if _, err := udp.Write(frame); err != nil {
+			return err
 		}
-		return err
+		if gap := sentAt.Sub(lastSend); !lastSend.IsZero() && gap >= 2*frameInterval {
+			if gaps == 0 {
+				firstGapAt = sentAt.Sub(start)
+			}
+			gaps++
+			maxGap = max(maxGap, gap)
+		}
+		lastSend = sentAt
+		// Follow the audio clock so encryption and UDP writes do not add to
+		// every interval. Rebase after a stall to avoid sending a burst.
+		if sentAt.Sub(nextSend) > frameInterval/2 {
+			nextSend = sentAt
+		}
+		nextSend = nextSend.Add(frameInterval)
+		return nil
 	}
 	// Give the speaking update and receiver a short lead before audible frames.
 	for i := 0; i < 2; i++ {
