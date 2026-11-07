@@ -39,3 +39,11 @@ Workerのログには本文・音声URL・認証情報を含めない。Gateway�
 [CloudflareのInworld TTS 2料金](https://developers.cloudflare.com/ai/models/inworld/tts-2/)は1文字$0.000025。10万文字で$2.50、30万文字で$7.50。言語タグも課金文字数に含まれるため、本文の文字数だけで計算した額より増える。$10で最大約40万の課金対象文字を生成できる。
 
 音声生成はAI GatewayのUnified Billingの前払いクレジットから支払う。Workers AIの無料枠はこの音声生成には適用されない。Clefは従来のWorkers AI課金となる。Worker実行料・有料プラン基本料・税は別。最新料金と残高はCloudflareのDashboardで確認する。
+
+## Grokとの比較
+
+`TTS_ENGINE=inworld` を既定とし、`grok` へ変更するとCloudflare経由の `xai/grok-tts` WebSocketを使用する。`GROK_VOICE` の既定は `rex`。比較時だけ認証済みの `/v1/tts?engine=grok` または `?engine=inworld` で選択することもできる。
+
+Grokでは原文を1回送り、言語は `auto` とする。Inworld専用の言語タグや日中判定は適用しない。`audio.delta` をMP3ストリームへ変換し、生成完了を待たずにBotへ返す。キャンセル・エラー・25秒経過・5 MiB超過時には接続を閉じる。外部APIキーは追加せず、AI Gatewayクレジットから支払う。Grokの料金は1文字$0.000015。
+
+`Deploy Worker` の `verify_speech` と `speech_engine` を指定すると、短い日中英・混在文を生成して接続を確認できる。この確認には推論料金がかかる。ログに音声・本文・署名付きURL・一時認証情報は保存しない。`first_audio_ms` と `duration_ms` で音声の到着開始と受信完了を区別する。音質はDiscordで確認する。

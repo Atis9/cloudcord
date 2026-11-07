@@ -6,6 +6,11 @@ on:
         description: 'Generate short Japanese, Chinese, English and mixed speech samples (billable)'
         type: boolean
         default: false
+      speech_engine:
+        description: 'Engine to verify; does not change the default engine'
+        type: choice
+        options: [configured, inworld, grok]
+        default: configured
 permissions:
   contents: read
 concurrency:
@@ -51,4 +56,6 @@ jobs:
         run: node scripts/worker-health.mjs
       - name: Check speech generation
         if: inputs.verify_speech
+        env:
+          SPEECH_ENGINE: ${{ inputs.speech_engine }}
         run: node scripts/worker-speech-check.mjs
