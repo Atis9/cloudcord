@@ -144,3 +144,79 @@ func TestGuildIsolationAndPlaybackCancellation(t *testing.T) {
 		t.Fatal("stopping one guild cancelled another")
 	}
 }
+
+func TestPrefetchOverlapsPlaybackAndPreservesQueueLimit(t *testing.T) {
+	calls, played := make(chan string, QueueLimit+1), make(chan string, QueueLimit+1)
+	release := make(chan struct{})
+	p := providerFunc(func(_ context.Context, r tts.SpeechRequest) (tts.AudioResult, error) {
+		calls <- r.Text
+		return result(r.Text), nil
+	})
+	s := New(context.Background(), "g", "t", "v", p, converter{}, playerFunc(func(ctx context.Context, b [][]byte) error {
+		text := string(b[0])
+		played <- text
+		if text == "first" {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}))
+	defer s.Stop()
+	s.Enqueue("first")
+	if wait(t, calls) != "first" || wait(t, played) != "first" {
+		t.Fatal("first post did not start")
+	}
+	s.Enqueue("second")
+	if wait(t, calls) != "second" {
+		t.Fatal("next post was not synthesized during playback")
+	}
+	for i := 1; i < QueueLimit; i++ {
+		if !s.Enqueue("queued") {
+			t.Fatal("queue filled too early")
+		}
+	}
+	if s.Enqueue("overflow") {
+		t.Fatal("prefetched post must count toward queue limit")
+	}
+	close(release)
+	if wait(t, played) != "second" || wait(t, played) != "queued" || wait(t, calls) != "queued" {
+		t.Fatal("prefetch changed the playback order or repeated synthesis")
+	}
+}
+
+func TestStopCancelsPrefetch(t *testing.T) {
+	playing, prefetched, cancelled := make(chan string, 1), make(chan string, 1), make(chan string, 1)
+	p := providerFunc(func(ctx context.Context, r tts.SpeechRequest) (tts.AudioResult, error) {
+		if r.Text == "next" {
+			prefetched <- r.Text
+			<-ctx.Done()
+			cancelled <- r.Text
+			return tts.AudioResult{}, ctx.Err()
+		}
+		return result(r.Text), nil
+	})
+	s := New(context.Background(), "g", "t", "v", p, converter{}, playerFunc(func(ctx context.Context, b [][]byte) error {
+		playing <- string(b[0])
+		<-ctx.Done()
+		return ctx.Err()
+	}))
+	defer s.Stop()
+	s.Enqueue("first")
+	wait(t, playing)
+	s.Enqueue("next")
+	wait(t, prefetched)
+	done := make(chan struct{})
+	go func() { s.Stop(); close(done) }()
+	wait(t, cancelled)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not finish")
+	}
+	if len(playing) != 0 {
+		t.Fatal("prefetched audio played after Stop")
+	}
+}
