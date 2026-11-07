@@ -36,6 +36,24 @@ test('Han hints preserve simplified priority and English while escaping user mar
   assert.equal(speechText(alternating, 'zh'), `<lang lang="zh-CN">${alternating}</lang>`);
   assert.ok(speechText(alternating, 'zh').length <= 2000);
 });
+test('MiniMax submits four languages as one unmodified request using the configured voice', async () => {
+  const text = 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。';
+  let calls = 0;
+  const env = environment(async (model, input, options) => {
+    calls++;
+    assert.equal(model, 'minimax/speech-2.8-turbo');
+    assert.deepEqual(input, { text, voice_id: 'Japanese_CalmLady', format: 'mp3', pitch: 0, speed: 1, volume: 1 });
+    assert.deepEqual(options, { gateway: { id: 'default', skipCache: true, collectLog: false } });
+    return audio;
+  });
+  env.TTS_ENGINE = 'minimax';
+  env.TTS_VOICE = 'Japanese_CalmLady';
+  const response = await worker.fetch(request({ guild_id: '12', text, language: 'ja' }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-speech-engine'), 'minimax');
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), audio);
+  assert.equal(calls, 1);
+});
 test('base64 WAV remains supported', async () => {
   const wav=new TextEncoder().encode('RIFF1234WAVEaudio');
   const response=await worker.fetch(request(),environment(async () => ({audio:btoa(String.fromCharCode(...wav))})));

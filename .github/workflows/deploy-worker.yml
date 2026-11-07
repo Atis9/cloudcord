@@ -15,6 +15,10 @@ on:
         description: 'Check an Inworld voice through AI Gateway without deploying (billable)'
         type: string
         default: ''
+      probe_minimax_voice:
+        description: 'Check a MiniMax voice through AI Gateway without deploying (billable)'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -49,21 +53,31 @@ jobs:
         working-directory: worker
       - run: npm run typecheck && npm test
         working-directory: worker
-      - name: Probe Inworld voice without deployment
-        if: inputs.probe_inworld_voice != ''
+      - name: Probe voice without deployment
+        if: inputs.probe_inworld_voice != '' || inputs.probe_minimax_voice != ''
         env:
-          PROBE_VOICE: ${{ inputs.probe_inworld_voice }}
-        run: node scripts/inworld-voice-check.mjs
+          INWORLD_VOICE: ${{ inputs.probe_inworld_voice }}
+          MINIMAX_VOICE: ${{ inputs.probe_minimax_voice }}
+        run: |
+          if [ -n "$INWORLD_VOICE" ] && [ -n "$MINIMAX_VOICE" ]; then
+            echo 'Select one voice to probe'
+            exit 1
+          fi
+          if [ -n "$MINIMAX_VOICE" ]; then
+            PROBE_ENGINE=minimax PROBE_VOICE="$MINIMAX_VOICE" node scripts/worker-voice-check.mjs
+          else
+            PROBE_ENGINE=inworld PROBE_VOICE="$INWORLD_VOICE" node scripts/worker-voice-check.mjs
+          fi
       - name: Deploy tested Worker with shared API secret
-        if: inputs.probe_inworld_voice == ''
+        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == ''
         run: node scripts/worker-deploy.mjs
       - name: Check deployed Worker (no inference)
-        if: inputs.probe_inworld_voice == ''
+        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == ''
         env:
           WORKER_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: node scripts/worker-health.mjs
       - name: Check speech generation
-        if: inputs.probe_inworld_voice == '' && inputs.verify_speech
+        if: inputs.probe_inworld_voice == '' && inputs.probe_minimax_voice == '' && inputs.verify_speech
         env:
           SPEECH_ENGINE: ${{ inputs.speech_engine }}
         run: node scripts/worker-speech-check.mjs
