@@ -18,6 +18,7 @@ const QueueLimit = 20
 
 type utterance struct {
 	text     string
+	speaker  string
 	enqueued time.Time
 }
 
@@ -40,6 +41,7 @@ type GuildSession struct {
 	done                                   chan struct{}
 	mu                                     sync.Mutex
 	closed                                 bool
+	speaker                                string
 	waiting                                int // Includes the next post while it is being prefetched.
 	Dropped                                atomic.Uint64
 }
@@ -62,10 +64,22 @@ func (s *GuildSession) Enqueue(text string) bool {
 		return false
 	}
 	// The channel cannot be full when the total waiting count is below its capacity.
-	s.queue <- utterance{text: text, enqueued: time.Now()}
+	s.queue <- utterance{text: text, speaker: s.speaker, enqueued: time.Now()}
 	s.waiting++
 	return true
 }
+func (s *GuildSession) Speaker() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.speaker
+}
+
+func (s *GuildSession) SetSpeaker(speaker string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.speaker = speaker
+}
+
 func (s *GuildSession) Stop() {
 	s.mu.Lock()
 	s.closed = true
@@ -171,7 +185,7 @@ func (s *GuildSession) prefetch(p tts.Provider) (<-chan *nextSpeech, context.Can
 
 func (s *GuildSession) synthesize(ctx context.Context, job utterance, p tts.Provider, prefetched bool) (tts.AudioResult, error) {
 	started := time.Now()
-	result, err := p.Synthesize(ctx, tts.SpeechRequest{GuildID: s.GuildID, Text: job.text, Language: "ja"})
+	result, err := p.Synthesize(ctx, tts.SpeechRequest{GuildID: s.GuildID, Text: job.text, Language: "ja", Voice: job.speaker})
 	if err != nil {
 		return tts.AudioResult{}, fmt.Errorf("TTS failed: %w", err)
 	}

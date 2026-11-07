@@ -11,6 +11,7 @@ type SpeechRequest struct {
 	GuildID  string `json:"guild_id"`
 	Text     string `json:"text"`
 	Language string `json:"language"`
+	Voice    string `json:"voice,omitempty"`
 }
 type AudioResult struct {
 	MIME      string

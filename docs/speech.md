@@ -22,9 +22,9 @@ BotのFFmpegで、声の高さを保ったまま約1.2倍速に調整する。�
 
 ## 設定とログ
 
-`worker/wrangler.toml` の `AI_GATEWAY_ID` は `default`、`TTS_VOICE` は `Kore` が既定。`TTS_ENGINE` の既定値はGemini 3.8 Flash-Lite TTSを使う `gemini-lite`。通常版のFlash TTSには `gemini` を指定する。既定のGatewayは最初の認証済み呼び出しで自動作成される。GoogleのAPIキーは不要。
+`worker/wrangler.toml` の `AI_GATEWAY_ID` は `default`、`TTS_VOICE` は `Sulafat` が既定。`TTS_ENGINE` の既定値はGemini 3.8 Flash-Lite TTSを使う `gemini-lite`。通常版のFlash TTSには `gemini` を指定する。既定のGatewayは最初の認証済み呼び出しで自動作成される。GoogleのAPIキーは不要。
 
-内部APIは互換性のため `language=ja` を受け付ける。合成は自動判定で、`X-Speech-Language` は `auto` を返す。
+内部APIは互換性のため `language=ja` を受け付ける。合成は自動判定で、`X-Speech-Language` は `auto` を返す。`/voice` で選択した場合、Botはキューに追加した時点の話者を `voice` に指定する。省略時は Worker の既定の話者を使う。
 
 Workerのログには本文・音声URL・認証情報を含めない。Gateway呼び出しは `collectLog=false`・`skipCache=true` を指定する。読み上げ本文は音声生成のためGoogleへ送信される。
 

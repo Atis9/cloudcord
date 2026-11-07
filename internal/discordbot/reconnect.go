@@ -66,6 +66,7 @@ func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, reconn
 		return // Leave no stale session; /join can retry.
 	}
 	next := &active{conn: conn, speech: session.New(b.ctx, guild.String(), a.speech.TextChannelID, a.speech.VoiceChannelID, b.tts, b.converter, voicePlayer{conn})}
+	next.speech.SetSpeaker(a.speech.Speaker())
 	b.mu.Lock()
 	b.sessions[guild] = next
 	b.mu.Unlock()

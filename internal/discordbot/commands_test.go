@@ -2,6 +2,7 @@ package discordbot
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"cloudcord/internal/session"
@@ -10,6 +11,23 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 )
+
+func TestVoiceSpeakerSelectionIsScopedToActiveSession(t *testing.T) {
+	const first, second snowflake.ID = 1, 2
+	b := &Bot{sessions: map[snowflake.ID]*active{first: {speech: &session.GuildSession{}}}}
+	if result := b.speaker(second, "Kore", true); !strings.Contains(result, "/join") {
+		t.Fatal("speaker selection should require an active session")
+	}
+	b.sessions[second] = &active{speech: &session.GuildSession{}}
+	b.speaker(first, "Kore", true)
+	b.speaker(first, "unavailable", true)
+	if result := b.speaker(first, "", false); !strings.Contains(result, "Kore") {
+		t.Fatalf("current speaker was not reported: %s", result)
+	}
+	if got := b.sessions[second].speech.Speaker(); got != "" {
+		t.Fatalf("speaker leaked into another guild: %s", got)
+	}
+}
 
 func TestCommandRegistrationClearsAdminRequirement(t *testing.T) {
 	for _, command := range commandDefinitions() {

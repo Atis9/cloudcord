@@ -16,6 +16,7 @@ export interface Env {
   GROK_VOICE?: string;
 }
 const MAX_AUDIO = 5 * 1024 * 1024;
+const GEMINI_VOICES = new Set(['Sulafat', 'Vindemiatrix', 'Kore']);
 class APIError extends Error {
   status: number;
   code: string;
@@ -210,7 +211,7 @@ async function authorized(header: string | null, token: string): Promise<boolean
 }
 type SpeechTimings = { synthesis_ms: number; audio_start_ms: number };
 
-async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream & { timings: SpeechTimings }> {
+async function synthesize(env: Env, text: string, engine: SpeechEngine, voice?: string): Promise<AudioStream & { timings: SpeechTimings }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stage = 'model';
   const controller = new AbortController();
@@ -231,7 +232,7 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
           }, gateway);
         } else {
           const model = engine === 'gemini-lite' ? 'google/gemini-3.8-flash-lite-tts' : 'google/gemini-3.8-flash-tts';
-          output = await env.AI.run(model, { text, voice: env.TTS_VOICE || 'Kore' }, gateway);
+          output = await env.AI.run(model, { text, voice: voice ?? (env.TTS_VOICE || 'Sulafat') }, gateway);
         }
         const audioStarted = Date.now();
         stage = 'audio';
@@ -287,7 +288,11 @@ export default {
       if (override !== null && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const selected = override ?? env.TTS_ENGINE ?? 'gemini-lite';
       if (selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini' && selected !== 'gemini-lite') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
-      const data = await synthesize(env, value.text, selected);
+      const voice = 'voice' in value ? value.voice : undefined;
+      if (voice !== undefined && (typeof voice !== 'string' || !GEMINI_VOICES.has(voice) || (selected !== 'gemini' && selected !== 'gemini-lite'))) {
+        throw new APIError(400, 'invalid_input', 'Unsupported speech voice');
+      }
+      const data = await synthesize(env, value.text, selected, voice);
       console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, engine: selected, ...data.timings }));
       const timing = `synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;
       return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': 'auto', 'X-Speech-Engine': selected, 'Server-Timing': timing } });

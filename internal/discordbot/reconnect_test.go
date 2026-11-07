@@ -67,6 +67,7 @@ func TestExpiredVoiceSession(t *testing.T) {
 			defer cancel()
 			gateway := &recoveryGateway{}
 			old := &active{conn: &recoveryConn{gateway: gateway}, speech: session.New(ctx, "1", "2", "3", nil, nil, nil)}
+			old.speech.SetSpeaker("Vindemiatrix")
 			defer old.speech.Stop()
 			cleaned := false
 			next := &recoveryConn{}
@@ -101,6 +102,9 @@ func TestExpiredVoiceSession(t *testing.T) {
 			}
 			if current == nil || current == old || current.speech.TextChannelID != "2" {
 				t.Fatal("session not replaced")
+			}
+			if current.speech.Speaker() != "Vindemiatrix" {
+				t.Fatal("speaker changed after reconnect")
 			}
 			current.speech.Stop()
 		})

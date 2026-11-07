@@ -41,6 +41,12 @@ type Bot struct {
 	commands  sync.WaitGroup
 }
 
+var speakerChoices = []discord.ApplicationCommandOptionChoiceString{
+	{Name: "Sulafat", Value: "Sulafat"},
+	{Name: "Vindemiatrix", Value: "Vindemiatrix"},
+	{Name: "Kore", Value: "Kore"},
+}
+
 func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (*Bot, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &Bot{ctx: ctx, cancel: cancel, tts: p, converter: c, sessions: map[snowflake.ID]*active{}, locks: map[snowflake.ID]*sync.Mutex{}}
@@ -61,11 +67,19 @@ func commandDefinitions() []discord.ApplicationCommandCreate {
 	return []discord.ApplicationCommandCreate{
 		discord.SlashCommandCreate{Name: "join", Description: "参加中のボイスチャンネルで読み上げを開始", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}, Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionChannel{Name: "text_channel", Description: "読み上げ対象（省略時は現在のテキストチャンネル）", ChannelTypes: []discord.ChannelType{discord.ChannelTypeGuildText}}}},
 		discord.SlashCommandCreate{Name: "leave", Description: "読み上げを停止して退出", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}},
+		discord.SlashCommandCreate{
+			Name: "voice", Description: "読み上げの話者を確認・変更",
+			DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](),
+			Contexts:                 []discord.InteractionContextType{discord.InteractionContextTypeGuild},
+			Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionString{
+				Name: "speaker", Description: "話者（省略すると現在の設定を表示）", Choices: speakerChoices,
+			}},
+		},
 	}
 }
 
 func (b *Bot) Register(app snowflake.ID) error {
-	// Upsert these two commands without deleting unrelated commands.
+	// Upsert our commands without deleting unrelated commands.
 	for _, cmd := range commandDefinitions() {
 		if _, err := b.Client.Rest.CreateGlobalCommand(app, cmd, rest.WithCtx(b.ctx)); err != nil {
 			return err
@@ -86,7 +100,8 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 	if !ok {
 		return
 	}
-	if data.CommandName() != "join" && data.CommandName() != "leave" {
+	name := data.CommandName()
+	if name != "join" && name != "leave" && name != "voice" {
 		return
 	}
 	if b.ctx.Err() != nil {
@@ -116,10 +131,16 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			result = "Bot は停止中です。"
 		} else if reason := b.controlError(*e.GuildID(), e.User().ID); reason != "" {
 			result = reason
-		} else if data.CommandName() == "leave" {
-			b.leave(*e.GuildID())
 		} else {
-			result = b.join(e)
+			switch name {
+			case "join":
+				result = b.join(e)
+			case "leave":
+				b.leave(*e.GuildID())
+			case "voice":
+				speaker, present := data.OptString("speaker")
+				result = b.speaker(*e.GuildID(), speaker, present)
+			}
 		}
 		reply, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -142,6 +163,29 @@ func (b *Bot) controlError(guild, user snowflake.ID) string {
 		return "Bot と同じボイスチャンネルに参加してから実行してください。"
 	}
 	return ""
+}
+
+// Caller holds the guild command lock and has passed controlError.
+func (b *Bot) speaker(guild snowflake.ID, speaker string, present bool) string {
+	b.mu.Lock()
+	current := b.sessions[guild]
+	b.mu.Unlock()
+	if current == nil {
+		return "`/join` で読み上げを開始してから実行してください。"
+	}
+	if !present {
+		if selected := current.speech.Speaker(); selected != "" {
+			return fmt.Sprintf("現在の話者は **%s** です。", selected)
+		}
+		return "現在は既定の話者を使っています。"
+	}
+	for _, choice := range speakerChoices {
+		if speaker == choice.Value {
+			current.speech.SetSpeaker(speaker)
+			return fmt.Sprintf("これから投稿されるメッセージを **%s** で読み上げます。", speaker)
+		}
+	}
+	return "一覧から話者を選んでください。"
 }
 
 func (b *Bot) join(e *events.ApplicationCommandInteractionCreate) string {
@@ -200,6 +244,9 @@ func (b *Bot) join(e *events.ApplicationCommandInteractionCreate) string {
 		return "Bot は停止中です。"
 	}
 	a := &active{conn: conn, speech: session.New(b.ctx, guild.String(), textID.String(), state.ChannelID.String(), b.tts, b.converter, voicePlayer{conn})}
+	if current != nil {
+		a.speech.SetSpeaker(current.speech.Speaker())
+	}
 	b.mu.Lock()
 	b.sessions[guild] = a
 	b.mu.Unlock()

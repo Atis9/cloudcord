@@ -23,6 +23,28 @@ test('the default engine sends each post to Gemini once with no separate languag
     assert.equal(calls, 1);
   }
 });
+test('Gemini uses an allowed voice override and falls back to Sulafat when unconfigured', async () => {
+  const voices: string[] = [];
+  const env = environment(async (_model, input) => {
+    assert.ok('voice' in input);
+    voices.push(input.voice);
+    return audio;
+  });
+  env.TTS_VOICE = '';
+  const base = { guild_id: '12', text: 'こんにちは', language: 'ja' };
+  for (const body of [base, { ...base, voice: 'Kore' }, { ...base, voice: 'Vindemiatrix' }]) {
+    const response = await worker.fetch(request(body), env);
+    assert.equal(response.status, 200);
+    await response.body?.cancel();
+  }
+  for (const voice of ['', null, 'unknown', 12]) {
+    const response = await worker.fetch(request({ ...base, voice }), env);
+    assert.equal(response.status, 400);
+  }
+  env.TTS_ENGINE = 'grok';
+  assert.equal((await worker.fetch(request({ ...base, voice: 'Kore' }), env)).status, 400);
+  assert.deepEqual(voices, ['Sulafat', 'Kore', 'Vindemiatrix']);
+});
 const mixedText = 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。';
 for (const [engine, voice, modelName, expected] of [
   ['minimax', 'Japanese_CalmLady', 'minimax/speech-2.8-turbo', { text: mixedText, voice_id: 'Japanese_CalmLady', format: 'mp3', pitch: 0, speed: 1, volume: 1 }],

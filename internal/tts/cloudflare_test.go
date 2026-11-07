@@ -31,14 +31,14 @@ func TestCloudflareContract(t *testing.T) {
 			t.Error("bad request")
 		}
 		var v SpeechRequest
-		if e := json.NewDecoder(r.Body).Decode(&v); e != nil || v.GuildID != "123456789012345678" || v.Language != "ja" || v.Text != "こんにちは" {
+		if e := json.NewDecoder(r.Body).Decode(&v); e != nil || v.GuildID != "123456789012345678" || v.Language != "ja" || v.Text != "こんにちは" || v.Voice != "Sulafat" {
 			t.Error("invalid payload")
 		}
 		w.Header().Set("Content-Type", "audio/mpeg")
 		w.Header().Set("X-Request-ID", "req-1")
 		_, _ = w.Write([]byte("ID3fixture"))
 	})
-	a, e := c.Synthesize(context.Background(), SpeechRequest{"123456789012345678", "こんにちは", "ja"})
+	a, e := c.Synthesize(context.Background(), SpeechRequest{GuildID: "123456789012345678", Text: "こんにちは", Language: "ja", Voice: "Sulafat"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -68,7 +68,7 @@ func TestCloudflareRejectsBadResponses(t *testing.T) {
 					http.Redirect(w, r, "/other", 302)
 				}
 			})
-			a, e := c.Synthesize(context.Background(), SpeechRequest{"12", "a", "ja"})
+			a, e := c.Synthesize(context.Background(), SpeechRequest{GuildID: "12", Text: "a", Language: "ja"})
 			if e == nil {
 				_, e = io.ReadAll(a.Stream)
 				a.Stream.Close()
@@ -90,7 +90,7 @@ func TestCloudflareWAVContract(t *testing.T) {
 		w.Header().Set("Content-Type", "audio/wav")
 		_, _ = w.Write([]byte("RIFF1234WAVEfixture"))
 	})
-	a, err := c.Synthesize(context.Background(), SpeechRequest{"12", "こんにちは", "ja"})
+	a, err := c.Synthesize(context.Background(), SpeechRequest{GuildID: "12", Text: "こんにちは", Language: "ja"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestCloudflareRateLimitCooldown(t *testing.T) {
 		w.WriteHeader(429)
 	})
 	for i := 0; i < 2; i++ {
-		if _, e := c.Synthesize(context.Background(), SpeechRequest{"12", "a", "ja"}); e == nil {
+		if _, e := c.Synthesize(context.Background(), SpeechRequest{GuildID: "12", Text: "a", Language: "ja"}); e == nil {
 			t.Fatal("expected failure")
 		}
 	}
@@ -123,7 +123,7 @@ func TestCloudflareCancellation(t *testing.T) {
 	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) { close(started); <-release })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, e := c.Synthesize(ctx, SpeechRequest{"12", "a", "ja"}); done <- e }()
+	go func() { _, e := c.Synthesize(ctx, SpeechRequest{GuildID: "12", Text: "a", Language: "ja"}); done <- e }()
 	<-started
 	cancel()
 	select {
@@ -148,7 +148,7 @@ func TestCloudflareStartsBeforeHTTPBodyEnds(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	a, err := c.Synthesize(ctx, SpeechRequest{"12", "a", "ja"})
+	a, err := c.Synthesize(ctx, SpeechRequest{GuildID: "12", Text: "a", Language: "ja"})
 	if err != nil {
 		t.Fatal("waited for full HTTP body:", err)
 	}
