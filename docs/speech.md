@@ -34,6 +34,8 @@ BotのFFmpegで、Opusへの変換前に自動音量調整・コンプレッサ�
 
 Workerのログには本文・音声URL・認証情報を含めない。Gateway呼び出しは `collectLog=false`・`skipCache=true` を指定する。読み上げ本文は音声生成のためInworldへ送信され、日中判定が必要な場合はClefにも送信される。
 
+成功時のログと `Server-Timing` に、言語判定、AI呼び出し、AI応答後から音声の先頭を検証するまでの時間を記録する。AI呼び出しの時間にはGatewayでの待ち時間も含まれる。
+
 ## 費用
 
 [CloudflareのInworld TTS 2料金](https://developers.cloudflare.com/ai/models/inworld/tts-2/)は1文字$0.000025。10万文字で$2.50、30万文字で$7.50。言語タグも課金文字数に含まれるため、本文の文字数だけで計算した額より増える。$10で最大約40万の課金対象文字を生成できる。

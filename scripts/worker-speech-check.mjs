@@ -1,4 +1,4 @@
-// Explicit opt-in deployment check. Submits four short billable syntheses.
+// Explicit opt-in deployment check. Submits short billable syntheses.
 // Never stores audio, input text, tokens or signed URLs in Actions artifacts/logs.
 const base = process.env.WORKER_URL;
 const token = process.env.CLOUDFLARE_BOT_API_TOKEN;
@@ -12,6 +12,7 @@ const samples = [
   ['Chinese', '你好，这是语音测试。'],
   ['English', 'Hello. This is a speech test.'],
   ['Mixed', '読み上げの test を行います。你好。Hello.'],
+  ['Han with classification', '歡迎使用 Discord。'],
 ];
 for (const [name, text] of samples) {
   const start = Date.now();
@@ -45,5 +46,9 @@ for (const [name, text] of samples) {
   const mp3 = count >= 3 && ((prefix[0] === 0x49 && prefix[1] === 0x44 && prefix[2] === 0x33) || (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0));
   const wav = count === 12 && new TextDecoder().decode(prefix.subarray(0, 4)) === 'RIFF' && new TextDecoder().decode(prefix.subarray(8)) === 'WAVE';
   if (!mp3 && !wav) throw new Error(`${name}: invalid audio signature`);
-  console.log(JSON.stringify({ sample: name, engine: response.headers.get('x-speech-engine') || engine, bytes: length, first_audio_ms: firstAudio, duration_ms: Date.now() - start, format: mp3 ? 'mp3' : 'wav' }));
+  const timings = {};
+  for (const match of (response.headers.get('server-timing') || '').matchAll(/\b(language|synthesis|audio_start);dur=(\d+)\b/g)) {
+    timings[`${match[1]}_ms`] = Number(match[2]);
+  }
+  console.log(JSON.stringify({ sample: name, engine: response.headers.get('x-speech-engine') || engine, bytes: length, first_audio_ms: firstAudio, duration_ms: Date.now() - start, format: mp3 ? 'mp3' : 'wav', ...timings }));
 }

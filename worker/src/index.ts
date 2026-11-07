@@ -223,26 +223,35 @@ export function speechText(text: string, language: string): string {
   // the catalog endpoint's 2,000-character limit. Keep its language hint.
   return tagged.length <= 2000 ? tagged : `<lang lang="${code}">${escaped}</lang>`;
 }
-async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream> {
+type SpeechTimings = { language_ms: number; synthesis_ms: number; audio_start_ms: number };
+
+async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise<AudioStream & { timings: SpeechTimings }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const controller = new AbortController();
   try {
     return await Promise.race([
       (async () => {
-        if (engine === 'grok') {
-          const output = await env.AI.run('xai/grok-tts', {
+        const started = Date.now();
+        const lang = engine === 'grok' ? 'auto' : await detectLanguage(text, env.AI, 'ja');
+        if (controller.signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
+        const gateway: GatewayOptions = { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } };
+        const synthesisStarted = Date.now();
+        const output = engine === 'grok'
+          ? await env.AI.run('xai/grok-tts', {
             text, language: 'auto', voice_id: env.GROK_VOICE || 'rex',
             output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 128000 },
-          }, { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } });
-          return { ...await audioStream(output, controller.signal), language: 'auto' };
-        }
-        const lang = await detectLanguage(text, env.AI, 'ja');
-        if (controller.signal.aborted) throw new APIError(504, 'tts_timeout', 'TTS timed out');
-        const output = await env.AI.run(MODEL, {
-          text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Dennis',
-          output_format: 'mp3', temperature: 1, timestamp_type: 'none',
-        }, { gateway: { id: env.AI_GATEWAY_ID || 'default', skipCache: true, collectLog: false } });
-        return { ...await audioStream(output, controller.signal), language: lang };
+          }, gateway)
+          : await env.AI.run(MODEL, {
+            text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Dennis',
+            output_format: 'mp3', temperature: 1, timestamp_type: 'none',
+          }, gateway);
+        const audioStarted = Date.now();
+        const audio = await audioStream(output, controller.signal);
+        return { ...audio, language: lang, timings: {
+          language_ms: synthesisStarted - started,
+          synthesis_ms: audioStarted - synthesisStarted,
+          audio_start_ms: Date.now() - audioStarted,
+        } };
       })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => { controller.abort(); reject(new APIError(504, 'tts_timeout', 'TTS timed out')); }, 25_000);
@@ -283,8 +292,9 @@ export default {
       const selected = new URL(request.url).searchParams.get('engine') ?? env.TTS_ENGINE ?? 'inworld';
       if (selected !== 'inworld' && selected !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const data = await synthesize(env, value.text, selected);
-      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected }));
-      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language!, 'X-Speech-Engine': selected } });
+      console.log(JSON.stringify({ event: 'tts_stream_ready', request_id: requestID, duration_ms: Date.now() - started, language: data.language, engine: selected, ...data.timings }));
+      const timing = `language;dur=${data.timings.language_ms}, synthesis;dur=${data.timings.synthesis_ms}, audio_start;dur=${data.timings.audio_start_ms}`;
+      return new Response(data.stream, { headers: { ...headers, 'Content-Type': data.mime, 'X-Speech-Language': data.language!, 'X-Speech-Engine': selected, 'Server-Timing': timing } });
     } catch (error) {
       const failure = error instanceof APIError ? error : new APIError(502, 'tts_failed', 'TTS generation failed');
       console.log(JSON.stringify({ event: 'request_failed', request_id: requestID, code: failure.code, status: failure.status, duration_ms: Date.now() - started }));
