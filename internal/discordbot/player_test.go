@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/disgoorg/disgo/voice"
@@ -15,12 +16,16 @@ type testUDP struct {
 	voice.UDPConn
 	packets [][]byte
 	failure error
+	write   func()
 }
 
 func (u *testUDP) SetWriteDeadline(time.Time) error { return nil }
 func (u *testUDP) Write(p []byte) (int, error) {
 	if u.failure != nil {
 		return 0, u.failure
+	}
+	if u.write != nil {
+		u.write()
 	}
 	u.packets = append(u.packets, bytes.Clone(p))
 	return len(p), nil
@@ -77,6 +82,34 @@ func TestPlayerCancelAndWriteFailure(t *testing.T) {
 	if c.flags[len(c.flags)-1] != voice.SpeakingFlagNone {
 		t.Fatal("speaking flag remains active")
 	}
+}
+
+func TestPlayerPacingDoesNotAccumulateWriteTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var times []time.Time
+		udp := &testUDP{write: func() {
+			times = append(times, time.Now())
+			if len(times) == 3 {
+				// Simulate one missed deadline, followed by normal writes.
+				time.Sleep(45 * time.Millisecond)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}}
+		frames := &testFrames{data: [][]byte{{0xfc, 1}, {0xfc, 2}}}
+		if err := (voicePlayer{&testVoice{udp: udp}}).Play(t.Context(), frames, nil); err != nil {
+			t.Fatal(err)
+		}
+		want := []time.Duration{0, 20, 40, 85, 105, 125, 145, 165, 185}
+		if len(times) != len(want) {
+			t.Fatalf("sent %d packets, want %d", len(times), len(want))
+		}
+		for i, at := range times {
+			if got := at.Sub(times[0]); got != want[i]*time.Millisecond {
+				t.Errorf("packet %d sent at %s, want %s", i, got, want[i]*time.Millisecond)
+			}
+		}
+	})
 }
 
 type testFrames struct{ data [][]byte }
