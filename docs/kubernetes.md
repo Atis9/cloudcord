@@ -16,11 +16,25 @@
    GitHubの `Atis9/cloudcord` リポジトリを示すOIDCグループに、このnamespaceのRoleを割り当てる。GitHub Actionsには `id-token: write` が必要。audienceは `k8s.chitoku.jp`。
 3. GHCRイメージをノードから取得できるようにする。公開リポジトリでもGHCRパッケージの公開設定は別なので確認する。privateイメージを使う場合はクラスタ側でimage pull secretを用意し、Deploymentの `imagePullSecrets` に指定する。GitHub Actionsの一時tokenを長期のpull secretにしない。
 
-## イメージの作成
+## タグで本番へデプロイ
+
+最新の `main` を取得し、リリース対象のコミットに未使用の `v1.2.3` 形式のタグを付けてpushする。
+
+```sh
+git fetch origin main
+git tag v1.2.3 origin/main
+git push origin refs/tags/v1.2.3
+```
+
+`Release` はタグが指すコミットでCIを実行する。検証済みのamd64イメージをGHCRに公開し、Cloudflare Workerのデプロイと疎通確認が成功してから、同じリリースのBotイメージをdigestで指定してKubernetesに反映する。疎通確認ではAI推論を実行しない。
+
+GitHubの `production` Environmentでデプロイ元を制限している場合は、`main` に加えてタグのパターン `v*.*.*` を許可する。途中で失敗した場合は、Actionsから同じリリースの失敗したジョブを再実行する。
+
+## イメージの手動公開
 
 `CI` の成功後、`Publish Bot` を `main` から手動実行する。同じコミットの成功したCIが生成したamd64イメージを再利用し、GHCRに `sha-<commit>` のイメージを作成する。成功時のSummaryに、イメージのdigestを表示する。CI成果物の保存期間は7日。期限切れの場合は同じ `main` でCIを再実行してから配布する。
 
-## デプロイ
+## Botの手動デプロイ
 
 `Deploy Bot` を `main` から手動実行し、`image_digest` に `sha256:...` を指定する。ワークフローはOIDCでクラスタへ接続し、SecretとDeploymentを更新してrolloutを待つ。可変タグではなくdigestで固定する。
 

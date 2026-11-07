@@ -42,7 +42,7 @@ npm test
 npm run build
 ```
 
-`CI` はWorkerの型検査・テスト・ビルドと、amd64のネイティブコンテナビルド・テストを実行する。`Publish Bot` は検証済みのamd64イメージをGHCRへ配布する。WorkerとBotのデプロイは別の手動ワークフロー。
+`CI` はWorkerの型検査・テスト・ビルドと、amd64のネイティブコンテナビルド・テストを実行する。`main` 上のコミットに `v1.2.3` 形式のタグを付けてpushすると、`Release` がCIを実行し、GHCRへのイメージ公開、Cloudflare Worker、Kubernetes Botの順に本番へ反映する。手順は[デプロイガイド](docs/kubernetes.md#タグで本番へデプロイ)を参照。
 
 arm64など別のアーキテクチャで使う場合は、対象環境でローカルビルドする。
 

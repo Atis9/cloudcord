@@ -1,0 +1,52 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: read
+concurrency:
+  group: production-release
+  queue: max
+jobs:
+  validate:
+    if: github.event.created
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo 'Use a release tag in the form v1.2.3.' >&2
+            exit 1
+          }
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo 'The release tag must point to a commit on main.' >&2
+            exit 1
+          }
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: ci
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    uses: ./.github/workflows/publish-bot.yml
+  deploy-worker:
+    needs: publish
+    uses: ./.github/workflows/deploy-worker.yml
+  deploy-bot:
+    needs: [publish, deploy-worker]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-bot.yml
+    with:
+      image_digest: ${{ needs.publish.outputs.image_digest }}
