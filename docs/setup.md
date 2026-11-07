@@ -16,7 +16,7 @@
 2. 対象アカウントへWorkerをデプロイできるAPI tokenを作成する。初回作成時と既存Worker更新時の権限は[公式の権限表](https://developers.cloudflare.com/workers/authorization/workers/)で確認する。
 3. BotとWorker間で共有するランダムな認証tokenを生成する（例: `openssl rand -hex 32`）。管理用API tokenとは別の値にする。
 4. Workers AIを有効にし、AI GatewayのUnified Billing用クレジットを追加する。Inworldの外部APIキーは不要。
-5. `worker/wrangler.toml` の `AI_GATEWAY_ID` と `TTS_VOICE` を確認する。既定のGateway `default` は最初の認証済み呼び出しで自動作成される。Gatewayの「Require provider credentials」はオフにする。話者は `Dennis` が既定で、CloudflareのInworld TTS 2モデルの話者一覧から変更できる。
+5. `worker/wrangler.toml` の `AI_GATEWAY_ID` と `TTS_VOICE` を確認する。既定のGateway `default` は最初の認証済み呼び出しで自動作成される。Gatewayの「Require provider credentials」はオフにする。話者は `Hana` が既定で、CloudflareのInworld TTS 2モデルの話者一覧から変更できる。
 
 ## GitHub
 

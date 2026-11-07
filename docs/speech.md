@@ -30,7 +30,7 @@ BotのFFmpegで、Opusへの変換前に自動音量調整・コンプレッサ�
 
 ## 設定とログ
 
-`worker/wrangler.toml` の `AI_GATEWAY_ID` は `default`、`TTS_VOICE` は `Dennis` が既定。`default` Gatewayは最初の認証済み呼び出し時に自動作成される。AI bindingは認証済みなので、InworldのAPIキーは不要。
+`worker/wrangler.toml` の `AI_GATEWAY_ID` は `default`、`TTS_VOICE` は `Hana` が既定。`default` Gatewayは最初の認証済み呼び出し時に自動作成される。AI bindingは認証済みなので、InworldのAPIキーは不要。
 
 内部APIは互換性のため `language=ja` を受け付ける。`X-Speech-Language` の `ja` / `en` / `zh` は漢字の読みの補助言語であり、混在文全体を単一言語で読む指定ではない。
 

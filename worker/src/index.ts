@@ -242,7 +242,7 @@ async function synthesize(env: Env, text: string, engine: SpeechEngine): Promise
             output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 128000 },
           }, gateway)
           : await env.AI.run(MODEL, {
-            text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Dennis',
+            text: speechText(text, lang), voice_id: env.TTS_VOICE || 'Hana',
             output_format: 'mp3', temperature: 1, timestamp_type: 'none',
           }, gateway);
         const audioStarted = Date.now();

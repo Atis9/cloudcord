@@ -9,7 +9,7 @@ binding = "AI"
 [vars]
 # The authenticated default AI Gateway is created on first use.
 AI_GATEWAY_ID = "default"
-TTS_VOICE = "Dennis"
+TTS_VOICE = "Hana"
 TTS_ENGINE = "inworld"
 GROK_VOICE = "rex"
 # BOT_API_TOKEN is provisioned by the Deploy Worker GitHub Actions workflow.

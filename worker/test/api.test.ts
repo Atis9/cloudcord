@@ -6,7 +6,7 @@ const audio = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]);
 function request(body: unknown = { guild_id: '123456789012345678', text: 'こんにちは', language: 'ja' }, token = 'secret'): Request {
   return new Request('https://example.com/v1/tts', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
 }
-function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', AI_GATEWAY_ID: 'default', TTS_VOICE: 'Dennis', AI: { run } }; }
+function environment(run: Env['AI']['run'] = async () => audio): Env { return { BOT_API_TOKEN: 'secret', AI_GATEWAY_ID: 'default', TTS_VOICE: 'Hana', AI: { run } }; }
 test('all languages and mixed posts use one Inworld synthesis with original English', async () => {
   for (const [text, language] of [
     ['こんにちは', 'ja'], ['Hello, this is a test.', 'en'],
@@ -17,7 +17,7 @@ test('all languages and mixed posts use one Inworld synthesis with original Engl
     const response = await worker.fetch(request({guild_id:'12',text,language:'ja'}), environment(async (model,input,options) => {
       calls++;
       assert.equal(model,'inworld/tts-2');
-      assert.deepEqual(input,{text:speechText(text,language),voice_id:'Dennis',output_format:'mp3',temperature:1,timestamp_type:'none'});
+      assert.deepEqual(input,{text:speechText(text,language),voice_id:'Hana',output_format:'mp3',temperature:1,timestamp_type:'none'});
       assert.deepEqual(options,{gateway:{id:'default',skipCache:true,collectLog:false}});
       return audio;
     }));
