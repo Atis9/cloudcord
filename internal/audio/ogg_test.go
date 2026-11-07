@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"testing"
@@ -148,6 +149,10 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 		if opusSamples(frame) != 960 {
 			t.Fatal("not a 20ms packet")
 		}
+		// 64,000 bits/s * 20 ms / 8 = 160 bytes of Opus payload.
+		if len(frame) > 160 {
+			t.Fatalf("Opus payload exceeds 64 kbps: %d bytes in 20 ms", len(frame))
+		}
 	}
 }
 
@@ -209,5 +214,50 @@ func TestFFmpegStartsBeforeMP3InputEnds(t *testing.T) {
 	go func() { _, e := writer.Write(data[8192:]); writer.CloseWithError(e) }()
 	if _, err = collect(ctx, stream); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFFmpegStartsBeforeStreamingWAVEnds(t *testing.T) {
+	path := levelFFmpegPath(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wav := levelWAV(2, func(i int) float64 { return 0.1 * math.Sin(2*math.Pi*440*float64(i)/48000) })
+	// The Worker sends unknown RIFF and data sizes and appends the second
+	// segment when its synthesis finishes.
+	binary.LittleEndian.PutUint32(wav[4:8], 0xffffffff)
+	binary.LittleEndian.PutUint32(wav[40:44], 0xffffffff)
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	continueAudio := make(chan struct{})
+	go func() {
+		const boundary = 44 + 48000*2
+		if _, err := writer.Write(wav[:boundary]); err != nil {
+			writer.CloseWithError(err)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			writer.CloseWithError(ctx.Err())
+			return
+		case <-continueAudio:
+		}
+		_, err := writer.Write(wav[boundary:])
+		writer.CloseWithError(err)
+	}()
+	firstCtx, firstCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer firstCancel()
+	first, err := stream.Next(firstCtx)
+	if err != nil || opusSamples(first) != 960 {
+		t.Fatalf("could not start streaming WAV before the continuation: %v", err)
+	}
+	close(continueAudio)
+	frames, err := collect(ctx, stream)
+	if err != nil || len(frames)+1 < 80 || len(frames)+1 > 86 {
+		t.Fatalf("expected both WAV segments, got %d Opus packets: %v", len(frames)+1, err)
 	}
 }

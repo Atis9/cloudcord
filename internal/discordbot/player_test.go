@@ -41,18 +41,19 @@ func TestPlayerPacingAndSpeaking(t *testing.T) {
 	c := &testVoice{udp: &testUDP{}}
 	frames := [][]byte{{0xfc, 1}, {0xfc, 2}}
 	start := time.Now()
-	if e := (voicePlayer{c}).Play(context.Background(), &testFrames{data: frames}, nil); e != nil {
+	startedAt := 0
+	if e := (voicePlayer{c}).Play(context.Background(), &testFrames{data: frames}, func() { startedAt = len(c.udp.packets) }); e != nil {
 		t.Fatal(e)
 	}
-	if time.Since(start) < 120*time.Millisecond {
+	if time.Since(start) < 160*time.Millisecond {
 		t.Fatal("packets were not paced")
 	}
-	if len(c.udp.packets) != 7 || !bytes.Equal(c.udp.packets[0], frames[0]) || !bytes.Equal(c.udp.packets[1], frames[1]) {
+	if len(c.udp.packets) != 9 || startedAt != 3 || !bytes.Equal(c.udp.packets[2], frames[0]) || !bytes.Equal(c.udp.packets[3], frames[1]) {
 		t.Fatal("bad packets")
 	}
-	for _, p := range c.udp.packets[2:] {
+	for _, p := range append(c.udp.packets[:2:2], c.udp.packets[4:]...) {
 		if !bytes.Equal(p, voice.SilenceAudioFrame) {
-			t.Fatal("missing silence tail")
+			t.Fatal("missing silence at playback boundary")
 		}
 	}
 	if len(c.flags) != 2 || c.flags[0] != voice.SpeakingFlagMicrophone || c.flags[1] != voice.SpeakingFlagNone {
@@ -66,7 +67,7 @@ func TestPlayerCancelAndWriteFailure(t *testing.T) {
 	if e := (voicePlayer{c}).Play(ctx, &testFrames{data: [][]byte{{0xfc}}}, nil); !errors.Is(e, context.Canceled) {
 		t.Fatal(e)
 	}
-	if len(c.udp.packets) != 0 || c.flags[len(c.flags)-1] != voice.SpeakingFlagNone {
+	if len(c.udp.packets) != 0 || len(c.flags) != 0 {
 		t.Fatal("cancelled player sent audio")
 	}
 	c = &testVoice{udp: &testUDP{failure: errors.New("UDP failure")}}

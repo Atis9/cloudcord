@@ -1,17 +1,34 @@
 package discordbot
 
 import (
-	"cloudcord/internal/audio"
 	"context"
 	"io"
 	"time"
 
+	"cloudcord/internal/audio"
 	"github.com/disgoorg/disgo/voice"
 )
 
 type voicePlayer struct{ conn voice.Conn }
 
 func (p voicePlayer) Play(ctx context.Context, frames audio.FrameStream, started func()) error {
+	// Let the converter get slightly ahead before sending the first audio packet.
+	var buffered [3][]byte
+	count := 0
+	for count < len(buffered) {
+		frame, err := frames.Next(ctx)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		buffered[count] = frame
+		count++
+	}
+	if count == 0 || ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err := p.conn.SetSpeaking(ctx, voice.SpeakingFlagMicrophone); err != nil {
 		return err
 	}
@@ -22,10 +39,10 @@ func (p voicePlayer) Play(ctx context.Context, frames audio.FrameStream, started
 	}()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
-	first := true
+	sent := false
 	// DisGo's UDP writer applies both DAVE and transport encryption.
 	send := func(frame []byte) error {
-		if !first {
+		if sent {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -43,15 +60,24 @@ func (p voicePlayer) Play(ctx context.Context, frames audio.FrameStream, started
 		}
 		_, err := p.conn.UDP().Write(frame)
 		if err == nil {
+			sent = true
 			ticker.Reset(20 * time.Millisecond)
 		}
-		if err == nil && first {
-			first = false
-			if started != nil {
-				started()
-			}
-		}
 		return err
+	}
+	// Give the speaking update and receiver a short lead before audible frames.
+	for i := 0; i < 2; i++ {
+		if err := send(voice.SilenceAudioFrame); err != nil {
+			return err
+		}
+	}
+	for i, frame := range buffered[:count] {
+		if err := send(frame); err != nil {
+			return err
+		}
+		if i == 0 && started != nil {
+			started()
+		}
 	}
 	for {
 		frame, err := frames.Next(ctx)
