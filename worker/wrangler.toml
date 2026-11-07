@@ -1,6 +1,7 @@
 name = "cloudcord"
 main = "src/entry.ts"
 compatibility_date = "2026-10-03"
+compatibility_flags = ["enable_request_signal"]
 workers_dev = true
 
 [ai]
