@@ -4,7 +4,6 @@ export type GrokInput = {
 };
 export type GrokOptions = {
   gateway: { id: string; skipCache: true; collectLog: false };
-  websocket: true;
   returnRawResponse: true;
 };
 export type GrokAI = { run(model: string, input: GrokInput, options: GrokOptions): Promise<unknown> };
@@ -131,7 +130,10 @@ export async function grokAudio(ai: GrokAI, text: string, gateway: string, voice
   const output = await ai.run('xai/grok-tts', {
     websocket: true, language: 'auto', voice_id: voice,
     output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 128000 },
-  }, { websocket: true, returnRawResponse: true, gateway: { id: gateway, skipCache: true, collectLog: false } });
+  // The binding's transport-level websocket option routes to Workers AI's
+  // native endpoint. Catalog models must use the Gateway POST path instead;
+  // websocket:true in the model input requests its connection descriptor.
+  }, { returnRawResponse: true, gateway: { id: gateway, skipCache: true, collectLog: false } });
   const socket = await socketFrom(output, signal);
   return socketAudio(socket, text, signal);
 }

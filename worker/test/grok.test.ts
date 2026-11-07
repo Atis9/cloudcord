@@ -21,7 +21,7 @@ test('Grok sends one original mixed utterance and streams before audio.done', as
     calls++;
     assert.equal(model,'xai/grok-tts');
     assert.deepEqual(input,{websocket:true,language:'auto',voice_id:'rex',output_format:{codec:'mp3',sample_rate:24000,bit_rate:128000}});
-    assert.deepEqual(opts,{websocket:true,returnRawResponse:true,gateway:{id:'default',skipCache:true,collectLog:false}});
+    assert.deepEqual(opts,{returnRawResponse:true,gateway:{id:'default',skipCache:true,collectLog:false}});
     return {webSocket:socket};
   }},'読み上げの test。你好。','default','rex',new AbortController().signal);
   assert.ok(socket.accepted);
