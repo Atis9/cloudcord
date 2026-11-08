@@ -7,4 +7,5 @@
 !internal/
 !internal/**
 !scripts/
+!scripts/build-ffmpeg.sh
 !scripts/install-libdave.sh

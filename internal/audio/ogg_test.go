@@ -75,7 +75,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Generate MP3 from a deterministic sine fixture, then use the production conversion.
-	cmd := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "mp3", "pipe:1")
+	cmd := exec.CommandContext(ctx, fixtureFFmpegPath(t), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "mp3", "pipe:1")
 	data, e := cmd.Output()
 	if e != nil {
 		t.Fatal(e)
@@ -132,7 +132,7 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "wav", "pipe:1").Output()
+	data, err := exec.CommandContext(ctx, fixtureFFmpegPath(t), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-f", "wav", "pipe:1").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestFFmpegStartsBeforeMP3InputEnds(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-b:a", "128k", "-f", "mp3", "pipe:1").Output()
+	data, err := exec.CommandContext(ctx, fixtureFFmpegPath(t), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-b:a", "128k", "-f", "mp3", "pipe:1").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

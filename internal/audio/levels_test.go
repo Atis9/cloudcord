@@ -96,6 +96,14 @@ func levelFFmpegPath(t *testing.T) string {
 	return path
 }
 
+func fixtureFFmpegPath(t *testing.T) string {
+	t.Helper()
+	if path := os.Getenv("FFMPEG_FIXTURE_PATH"); path != "" {
+		return path
+	}
+	return levelFFmpegPath(t)
+}
+
 func levelWAV(seconds float64, sample func(int) float64) []byte {
 	count := int(seconds * 48000)
 	data := make([]byte, 44+count*2)
@@ -146,7 +154,7 @@ func convertAndDecode(t *testing.T, ctx context.Context, path string, wav []byte
 		binary.LittleEndian.PutUint32(data[22:], oggCRC(data))
 		ogg = append(ogg, data...)
 	}
-	cmd := exec.CommandContext(ctx, path, "-hide_banner", "-loglevel", "error", "-f", "ogg", "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1")
+	cmd := exec.CommandContext(ctx, fixtureFFmpegPath(t), "-hide_banner", "-loglevel", "error", "-f", "ogg", "-i", "pipe:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1")
 	cmd.Stdin = bytes.NewReader(ogg)
 	raw, err := cmd.Output()
 	if err != nil {
