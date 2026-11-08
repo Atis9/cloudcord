@@ -69,3 +69,5 @@ Podは非root・読み取り専用root filesystemで動作し、書き込み先�
 初期リソース設定はrequest 50m CPU / 64Mi、limit 500m CPU / 256Mi。実際の利用状況に応じて調整する。再起動時はセッションと待機音声を引き継がない。
 
 arm64向けは対象のローカル環境で `docker build -t cloudcord:local .` を実行する。Kubernetesでそのイメージを使う場合は、イメージの配置先と `nodeSelector` を合わせる。
+
+実行イメージには Bot、音声処理に必要な機能だけを有効にした FFmpeg、共有ライブラリ、CA 証明書と readiness probe 用の `test` を収める。FFmpeg のソースとビルド設定は [build-ffmpeg.sh](../scripts/build-ffmpeg.sh) で確認できる。

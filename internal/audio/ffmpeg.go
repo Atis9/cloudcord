@@ -23,10 +23,11 @@ type FFmpeg struct {
 }
 
 // Short normalization windows keep streaming startup bounded. Limit gain to 20 dB,
-// avoid boosting breaths between phrases, and disable the limiter's makeup gain.
+// avoid boosting breaths between phrases, and tame strong sibilants before limiting.
 const speechFilter = "atempo=1.2," +
 	"dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.015," +
 	"acompressor=threshold=0.25:ratio=3:attack=5:release=100," +
+	"deesser=i=0.28:m=0.85," +
 	"alimiter=limit=0.89:level=0:latency=1"
 
 func NewFFmpeg(path string) *FFmpeg { return &FFmpeg{Path: path, slots: make(chan struct{}, 1)} }

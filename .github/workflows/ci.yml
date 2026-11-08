@@ -60,15 +60,20 @@ jobs:
         run: |
           docker load --input "$IMAGE_TAR"
           image="cloudcord:sha-$COMMIT-$ARCH"
-          docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m --cap-drop ALL \
-            --security-opt no-new-privileges --entrypoint /bin/sh "$image" -ec '
-            test "$(id -u)" = 65532
-            ldd /usr/local/bin/cloudcord > /tmp/links
-            ! grep -q "not found" /tmp/links
-            ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libopus
-          '
+          runtime=(--rm --read-only --tmpfs /tmp:rw,nosuid,nodev,size=32m --cap-drop ALL --security-opt no-new-privileges)
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = '65532:65532'
+          docker run "${runtime[@]}" --entrypoint /usr/bin/test "$image" -x /usr/local/bin/cloudcord
+          docker run "${runtime[@]}" --entrypoint /usr/bin/ffmpeg "$image" -hide_banner -encoders | grep libopus
+          docker run "${runtime[@]}" --entrypoint /usr/bin/ffmpeg "$image" -hide_banner -filters | grep deesser
+          if startup=$(docker run "${runtime[@]}" "$image" 2>&1); then
+            echo 'Expected startup to require Discord configuration.' >&2
+            exit 1
+          fi
+          jq -e 'select(.msg == "startup_failed" and .error == "DISCORD_TOKEN is required")' <<< "$startup"
+          printf 'Bot image bytes: %s\n' "$(docker image inspect "$image" --format '{{.Size}}')"
           mkdir -p dist
           gzip -n -c "$IMAGE_TAR" > dist/cloudcord-linux-$ARCH-docker.tar.gz
+          printf 'Compressed Bot image archive bytes: %s\n' "$(stat -c %s "dist/cloudcord-linux-$ARCH-docker.tar.gz")"
           (cd dist && sha256sum cloudcord-linux-$ARCH-docker.tar.gz > SHA256SUMS-$ARCH)
           printf '%s\n' "$COMMIT" > dist/COMMIT-$ARCH
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
