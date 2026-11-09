@@ -27,6 +27,7 @@ type active struct {
 	speech     *session.GuildSession
 	conn       voice.Conn
 	recovering bool
+	emptyTimer *time.Timer
 }
 type Bot struct {
 	Client    *bot.Client
@@ -249,6 +250,7 @@ func (b *Bot) join(e *events.ApplicationCommandInteractionCreate) string {
 	}
 	b.mu.Lock()
 	b.sessions[guild] = a
+	b.updateEmptyTimer(guild, a)
 	b.mu.Unlock()
 	slog.Info("voice_joined", "guild_id", guild.String())
 	return fmt.Sprintf("<#%s> の投稿を読み上げます。", textID)
@@ -259,10 +261,16 @@ func (b *Bot) leave(guild snowflake.ID) {
 	b.mu.Lock()
 	a := b.sessions[guild]
 	delete(b.sessions, guild)
-	b.mu.Unlock()
-	if a == nil {
-		return
+	if a != nil {
+		a.cancelEmptyTimer()
 	}
+	b.mu.Unlock()
+	if a != nil {
+		closeVoiceSession(guild, a)
+	}
+}
+
+func closeVoiceSession(guild snowflake.ID, a *active) {
 	a.speech.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -291,15 +299,25 @@ func (b *Bot) message(e *events.MessageCreate) {
 	a.speech.Enqueue(Normalize(m.Content, names))
 }
 func (b *Bot) voiceState(e *events.GuildVoiceStateUpdate) {
-	if e.VoiceState.UserID != b.Client.ID() {
-		return
-	}
-	guild := e.VoiceState.GuildID
+	state := e.VoiceState
+	guild := state.GuildID
 	b.mu.Lock()
 	a := b.sessions[guild]
-	recovering := a != nil && a.recovering
+	if a == nil || a.recovering {
+		b.mu.Unlock()
+		return
+	}
+	channel := snowflake.MustParse(a.speech.VoiceChannelID)
+	inChannel := state.ChannelID != nil && *state.ChannelID == channel
+	if state.UserID != b.Client.ID() {
+		if old := e.OldVoiceState.ChannelID; inChannel || (old != nil && *old == channel) {
+			b.updateEmptyTimer(guild, a)
+		}
+		b.mu.Unlock()
+		return
+	}
 	b.mu.Unlock()
-	if a == nil || recovering || (e.VoiceState.ChannelID != nil && e.VoiceState.ChannelID.String() == a.speech.VoiceChannelID) {
+	if inChannel {
 		return
 	}
 	// Never block Gateway dispatch while stopping a voice connection.
