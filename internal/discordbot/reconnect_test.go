@@ -8,6 +8,7 @@ import (
 
 	"cloudcord/internal/session"
 	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/voice"
 	"github.com/disgoorg/snowflake/v2"
 	"github.com/gorilla/websocket"
@@ -75,7 +76,13 @@ func TestExpiredVoiceSession(t *testing.T) {
 				next.openErr = errors.New("offline")
 			}
 			manager := &recoveryManager{conn: next, cleaned: &cleaned, t: t}
-			b := &Bot{ctx: ctx, closing: tc.closing, Client: &bot.Client{VoiceManager: manager}, sessions: map[snowflake.ID]*active{1: old}, locks: map[snowflake.ID]*sync.Mutex{}}
+			caches := cache.New(cache.WithCaches(cache.FlagVoiceStates))
+			b := &Bot{ctx: ctx, closing: tc.closing, Client: &bot.Client{VoiceManager: manager, Caches: caches}, sessions: map[snowflake.ID]*active{1: old}, locks: map[snowflake.ID]*sync.Mutex{}}
+			if tc.want {
+				b.mu.Lock()
+				b.updateEmptyTimer(1, old)
+				b.mu.Unlock()
+			}
 			var callback voice.Gateway = gateway
 			if tc.stale {
 				callback = &recoveryGateway{}
@@ -94,6 +101,9 @@ func TestExpiredVoiceSession(t *testing.T) {
 			if next.channel != 3 {
 				t.Fatal("wrong voice channel")
 			}
+			if old.emptyTimer != nil {
+				t.Fatal("the old voice session kept its idle timer")
+			}
 			if tc.fail {
 				if current != nil || !next.closed {
 					t.Fatal("failed connection not cleaned")
@@ -106,7 +116,10 @@ func TestExpiredVoiceSession(t *testing.T) {
 			if current.speech.Speaker() != "Vindemiatrix" {
 				t.Fatal("speaker changed after reconnect")
 			}
-			current.speech.Stop()
+			if current.emptyTimer == nil {
+				t.Fatal("the rejoined empty channel did not get a new idle timer")
+			}
+			b.leave(1)
 		})
 	}
 }

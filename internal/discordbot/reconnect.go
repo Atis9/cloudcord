@@ -32,6 +32,7 @@ func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, reconn
 	recover := expired && !b.closing && b.ctx.Err() == nil && a != nil && !a.recovering && a.conn.Gateway() == g
 	if recover {
 		a.recovering = true
+		a.cancelEmptyTimer()
 		b.commands.Add(1)
 	}
 	b.mu.Unlock()
@@ -69,6 +70,7 @@ func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, reconn
 	next.speech.SetSpeaker(a.speech.Speaker())
 	b.mu.Lock()
 	b.sessions[guild] = next
+	b.updateEmptyTimer(guild, next)
 	b.mu.Unlock()
 	slog.Info("voice_rejoined", "guild_id", guild.String())
 }
