@@ -51,8 +51,13 @@ var speakerChoices = []discord.ApplicationCommandOptionChoiceString{
 func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (*Bot, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &Bot{ctx: ctx, cancel: cancel, tts: p, converter: c, sessions: map[snowflake.ID]*active{}, locks: map[snowflake.ID]*sync.Mutex{}}
+	identify := &identifyGuard{ctx: ctx, IdentifyRateLimiter: gateway.NewIdentifyRateLimiter(gateway.WithIdentifyWait(2 * time.Minute))}
 	client, err := disgo.New(token,
-		bot.WithGatewayConfigOpts(gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildMessages, gateway.IntentGuildVoiceStates, gateway.IntentMessageContent), gateway.WithAutoReconnect(true)),
+		bot.WithGatewayConfigOpts(
+			gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildMessages, gateway.IntentGuildVoiceStates, gateway.IntentMessageContent),
+			gateway.WithAutoReconnect(true),
+			gateway.WithIdentifyRateLimiter(identify),
+		),
 		bot.WithCacheConfigOpts(cache.WithCaches(cache.FlagGuilds, cache.FlagChannels, cache.FlagRoles, cache.FlagVoiceStates)),
 		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(golibdave.NewSession), voice.WithConnCreateFunc(b.createVoiceConn)),
 		bot.WithEventListenerFunc(b.command), bot.WithEventListenerFunc(b.message), bot.WithEventListenerFunc(b.voiceState),
@@ -62,6 +67,7 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 		return nil, err
 	}
 	b.Client = client
+	identify.getGatewayBot = client.Rest.GetGatewayBot
 	return b, nil
 }
 func commandDefinitions() []discord.ApplicationCommandCreate {

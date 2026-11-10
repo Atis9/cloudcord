@@ -1,14 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/disgoorg/disgo/rest"
 )
+
+func TestRedactGatewayPayload(t *testing.T) {
+	var log bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{ReplaceAttr: redactGatewayPayload}))
+	logger.Error("error while parsing gateway message", "err", errors.New("failed to unmarshal message data: private payload"))
+	if strings.Contains(log.String(), "private payload") || !strings.Contains(log.String(), "Discord Gateway payload could not be decoded") {
+		t.Fatal("Gateway payload should be omitted from logs")
+	}
+}
 
 func TestStartupError(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "private-token")
