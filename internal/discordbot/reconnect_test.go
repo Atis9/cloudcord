@@ -87,7 +87,7 @@ func TestExpiredVoiceSession(t *testing.T) {
 			if tc.stale {
 				callback = &recoveryGateway{}
 			}
-			b.voiceClosed(1, callback, &websocket.CloseError{Code: tc.code}, false, func(voice.Gateway, error, bool) { cleaned = true })
+			b.voiceClosed(1, callback, &websocket.CloseError{Code: tc.code}, func(voice.Gateway, error) { cleaned = true })
 			if !cleaned || manager.created != tc.want {
 				t.Fatalf("cleaned=%v created=%v", cleaned, manager.created)
 			}

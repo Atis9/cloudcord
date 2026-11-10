@@ -16,15 +16,15 @@ import (
 func (b *Bot) createVoiceConn(guild, user snowflake.ID, update voice.StateUpdateFunc, remove func(), opts ...voice.ConnConfigOpt) voice.Conn {
 	return voice.NewConn(guild, user, update, remove, append(opts, voice.WithConnGatewayCreateFunc(
 		func(dave godave.Session, events voice.EventHandlerFunc, closed voice.CloseHandlerFunc, gatewayOpts ...voice.GatewayConfigOpt) voice.Gateway {
-			return voice.NewGateway(dave, events, func(g voice.Gateway, err error, reconnect bool) {
-				b.voiceClosed(guild, g, err, reconnect, closed)
+			return voice.NewGateway(dave, events, func(g voice.Gateway, err error) {
+				b.voiceClosed(guild, g, err, closed)
 			}, gatewayOpts...)
 		}))...)
 }
 
 // DisGo resumes transient failures itself. An expired session needs a new
 // voice-state handshake, after the old connection has been fully removed.
-func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, reconnect bool, closed voice.CloseHandlerFunc) {
+func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, closed voice.CloseHandlerFunc) {
 	var closeErr *websocket.CloseError
 	expired := errors.As(err, &closeErr) && (closeErr.Code == 4006 || closeErr.Code == 4009)
 	b.mu.Lock()
@@ -37,7 +37,7 @@ func (b *Bot) voiceClosed(guild snowflake.ID, g voice.Gateway, err error, reconn
 	}
 	b.mu.Unlock()
 	// Preserve the library's UDP, Gateway and manager cleanup.
-	closed(g, err, reconnect)
+	closed(g, err)
 	if !recover {
 		return
 	}

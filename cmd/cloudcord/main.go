@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: redactGatewayPayload})))
 	if err := run(); err != nil {
 		slog.Error("startup_failed", "error", err)
 		os.Exit(1)
@@ -27,6 +27,14 @@ func main() {
 }
 
 const readinessPath = "/tmp/cloudcord-ready"
+
+func redactGatewayPayload(_ []string, attr slog.Attr) slog.Attr {
+	// DisGo wraps decoding errors with the full Discord event payload.
+	if err, ok := attr.Value.Any().(error); ok && strings.Contains(err.Error(), "failed to unmarshal message data:") {
+		return slog.String(attr.Key, "Discord Gateway payload could not be decoded")
+	}
+	return attr
+}
 
 func run() error {
 	if err := os.Remove(readinessPath); err != nil && !errors.Is(err, os.ErrNotExist) {
