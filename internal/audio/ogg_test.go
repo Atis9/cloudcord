@@ -158,7 +158,7 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 
 func TestFFmpegPlaybackSpeeds(t *testing.T) {
 	path := levelFFmpegPath(t)
-	for _, speed := range []float64{0.5, 1, 2} {
+	for _, speed := range []float64{0.5, 1, 1.2, 2} {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		wav := levelWAV(1, func(i int) float64 { return 0.1 * math.Sin(2*math.Pi*440*float64(i)/48000) })
 		stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(wav))}, speed)
