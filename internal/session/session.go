@@ -19,6 +19,7 @@ const QueueLimit = 20
 type utterance struct {
 	text     string
 	speaker  string
+	engine   string
 	speed    float64
 	enqueued time.Time
 }
@@ -43,6 +44,7 @@ type GuildSession struct {
 	mu                                     sync.Mutex
 	closed                                 bool
 	speaker                                string
+	engine                                 string
 	speed                                  float64
 	waiting                                int // Includes the next post while it is being prefetched.
 	Dropped                                atomic.Uint64
@@ -66,7 +68,7 @@ func (s *GuildSession) Enqueue(text string) bool {
 		return false
 	}
 	// The channel cannot be full when the total waiting count is below its capacity.
-	s.queue <- utterance{text: text, speaker: s.speaker, speed: s.playbackSpeed(), enqueued: time.Now()}
+	s.queue <- utterance{text: text, speaker: s.speaker, engine: s.engine, speed: s.playbackSpeed(), enqueued: time.Now()}
 	s.waiting++
 	return true
 }
@@ -80,6 +82,22 @@ func (s *GuildSession) SetSpeaker(speaker string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.speaker = speaker
+}
+
+func (s *GuildSession) Engine() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.engine
+}
+
+func (s *GuildSession) SetEngine(engine string) bool {
+	if engine != "gemini" && engine != "gemini-lite" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.engine = engine
+	return true
 }
 
 // Caller holds s.mu.
@@ -211,11 +229,11 @@ func (s *GuildSession) prefetch(p tts.Provider) (<-chan *nextSpeech, context.Can
 
 func (s *GuildSession) synthesize(ctx context.Context, job utterance, p tts.Provider, prefetched bool) (tts.AudioResult, error) {
 	started := time.Now()
-	result, err := p.Synthesize(ctx, tts.SpeechRequest{GuildID: s.GuildID, Text: job.text, Language: "ja", Voice: job.speaker})
+	result, err := p.Synthesize(ctx, tts.SpeechRequest{GuildID: s.GuildID, Text: job.text, Language: "ja", Voice: job.speaker, Engine: job.engine})
 	if err != nil {
 		return tts.AudioResult{}, fmt.Errorf("TTS failed: %w", err)
 	}
-	slog.Info("tts_stream_ready", "guild_id", s.GuildID, "request_id", result.RequestID, "duration_ms", time.Since(started).Milliseconds(), "prefetched", prefetched)
+	slog.Info("tts_stream_ready", "guild_id", s.GuildID, "request_id", result.RequestID, "engine", job.engine, "voice", job.speaker, "duration_ms", time.Since(started).Milliseconds(), "prefetched", prefetched)
 	return result, nil
 }
 

@@ -46,6 +46,35 @@ test('Gemini uses an allowed voice override and falls back to Sulafat when uncon
   assert.deepEqual(voices, ['Sulafat', 'Kore', 'Vindemiatrix']);
 });
 const mixedText = 'みんなで「Hello」「你好」「안녕하세요」と挨拶しました。';
+test('request engine and voice override the Worker defaults', async () => {
+  const calls: string[] = [];
+  const env = environment(async (model, input) => {
+    assert.ok('voice' in input);
+    calls.push(model + ':' + input.voice);
+    return audio;
+  });
+  env.TTS_ENGINE = 'gemini-lite';
+  const base = { guild_id: '12', text: mixedText, language: 'ja' };
+  for (const [engine, voice] of [['gemini', 'Sulafat'], ['gemini-lite', 'Vindemiatrix']]) {
+    const response = await worker.fetch(request({ ...base, engine, voice }), env);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-speech-engine'), engine);
+    await response.body?.cancel();
+  }
+  assert.deepEqual(calls, [
+    'google/gemini-3.8-flash-tts:Sulafat',
+    'google/gemini-3.8-flash-lite-tts:Vindemiatrix',
+  ]);
+  for (const engine of ['', null, 12, 'unknown', 'grok']) {
+    assert.equal((await worker.fetch(request({ ...base, engine }), env)).status, 400);
+  }
+  const conflicting = request({ ...base, engine: 'gemini' });
+  const url = new URL(conflicting.url);
+  url.searchParams.set('engine', 'grok');
+  assert.equal((await worker.fetch(new Request(url, conflicting), env)).status, 400);
+  assert.equal(calls.length, 2);
+});
+
 for (const [engine, voice, modelName, expected] of [
   ['minimax', 'Japanese_CalmLady', 'minimax/speech-2.8-turbo', { text: mixedText, voice_id: 'Japanese_CalmLady', format: 'mp3', pitch: 0, speed: 1, volume: 1 }],
   ['gemini', 'Kore', 'google/gemini-3.8-flash-tts', { text: mixedText, voice: 'Kore' }],

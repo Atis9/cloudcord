@@ -48,6 +48,11 @@ var speakerChoices = []discord.ApplicationCommandOptionChoiceString{
 	{Name: "Kore", Value: "Kore"},
 }
 
+var engineChoices = []discord.ApplicationCommandOptionChoiceString{
+	{Name: "Gemini Flash TTS", Value: "gemini"},
+	{Name: "Gemini Flash-Lite TTS", Value: "gemini-lite"},
+}
+
 func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (*Bot, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &Bot{ctx: ctx, cancel: cancel, tts: p, converter: c, sessions: map[snowflake.ID]*active{}, locks: map[snowflake.ID]*sync.Mutex{}}
@@ -73,6 +78,14 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 func commandDefinitions() []discord.ApplicationCommandCreate {
 	minSpeed, maxSpeed := 0.5, 2.0
 	return []discord.ApplicationCommandCreate{
+		discord.SlashCommandCreate{
+			Name: "model", Description: "読み上げモデルを確認・変更",
+			DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](),
+			Contexts:                 []discord.InteractionContextType{discord.InteractionContextTypeGuild},
+			Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionString{
+				Name: "engine", Description: "モデル（省略すると現在の設定を表示）", Choices: engineChoices,
+			}},
+		},
 		discord.SlashCommandCreate{
 			Name: "speed", Description: "読み上げ速度を確認・変更",
 			DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](),
@@ -118,7 +131,7 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		return
 	}
 	name := data.CommandName()
-	if name != "join" && name != "leave" && name != "voice" && name != "speed" {
+	if name != "join" && name != "leave" && name != "voice" && name != "speed" && name != "model" {
 		return
 	}
 	if b.ctx.Err() != nil {
@@ -160,6 +173,9 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			case "speed":
 				rate, present := data.OptFloat("rate")
 				result = b.speed(*e.GuildID(), rate, present)
+			case "model":
+				engine, present := data.OptString("engine")
+				result = b.model(*e.GuildID(), engine, present)
 			}
 		}
 		reply, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -168,6 +184,34 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			slog.Warn("interaction_response_failed")
 		}
 	}()
+}
+
+// Caller holds the guild command lock and has passed controlError.
+func (b *Bot) model(guild snowflake.ID, engine string, present bool) string {
+	b.mu.Lock()
+	current := b.sessions[guild]
+	b.mu.Unlock()
+	if current == nil {
+		return "`/join` で読み上げを開始してから実行してください。"
+	}
+	if !present {
+		for _, choice := range engineChoices {
+			if current.speech.Engine() == choice.Value {
+				return fmt.Sprintf("現在のモデルは **%s** です。", choice.Name)
+			}
+		}
+		return "現在は Worker の既定モデルを使っています。"
+	}
+	if !current.speech.SetEngine(engine) {
+		return "一覧からモデルを選んでください。"
+	}
+	slog.Info("speech_model_changed", "guild_id", guild.String(), "engine", engine)
+	for _, choice := range engineChoices {
+		if engine == choice.Value {
+			return fmt.Sprintf("これから投稿されるメッセージを **%s** で読み上げます。", choice.Name)
+		}
+	}
+	return ""
 }
 
 // Caller holds the guild command lock and has passed controlError.
@@ -219,6 +263,7 @@ func (b *Bot) speaker(guild snowflake.ID, speaker string, present bool) string {
 	for _, choice := range speakerChoices {
 		if speaker == choice.Value {
 			current.speech.SetSpeaker(speaker)
+			slog.Info("speech_voice_changed", "guild_id", guild.String(), "voice", speaker)
 			return fmt.Sprintf("これから投稿されるメッセージを **%s** で読み上げます。", speaker)
 		}
 	}

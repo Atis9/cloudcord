@@ -31,14 +31,14 @@ func TestCloudflareContract(t *testing.T) {
 			t.Error("bad request")
 		}
 		var v SpeechRequest
-		if e := json.NewDecoder(r.Body).Decode(&v); e != nil || v.GuildID != "123456789012345678" || v.Language != "ja" || v.Text != "こんにちは" || v.Voice != "Sulafat" {
+		if e := json.NewDecoder(r.Body).Decode(&v); e != nil || v.GuildID != "123456789012345678" || v.Language != "ja" || v.Text != "こんにちは" || v.Voice != "Sulafat" || v.Engine != "gemini" {
 			t.Error("invalid payload")
 		}
 		w.Header().Set("Content-Type", "audio/mpeg")
 		w.Header().Set("X-Request-ID", "req-1")
 		_, _ = w.Write([]byte("ID3fixture"))
 	})
-	a, e := c.Synthesize(context.Background(), SpeechRequest{GuildID: "123456789012345678", Text: "こんにちは", Language: "ja", Voice: "Sulafat"})
+	a, e := c.Synthesize(context.Background(), SpeechRequest{GuildID: "123456789012345678", Text: "こんにちは", Language: "ja", Voice: "Sulafat", Engine: "gemini"})
 	if e != nil {
 		t.Fatal(e)
 	}

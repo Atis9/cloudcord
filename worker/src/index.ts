@@ -334,7 +334,14 @@ export default {
       }
       const override = new URL(request.url).searchParams.get('engine');
       if (override !== null && override !== 'grok') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
-      const selected = override ?? env.TTS_ENGINE ?? 'gemini-lite';
+      const engine = 'engine' in value ? value.engine : undefined;
+      if (engine !== undefined && engine !== 'gemini' && engine !== 'gemini-lite') {
+        throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
+      }
+      if (override !== null && engine !== undefined) {
+        throw new APIError(400, 'invalid_input', 'Select one speech engine');
+      }
+      const selected = override ?? engine ?? env.TTS_ENGINE ?? 'gemini-lite';
       if (selected !== 'grok' && selected !== 'minimax' && selected !== 'gemini' && selected !== 'gemini-lite') throw new APIError(400, 'invalid_input', 'Unsupported speech engine');
       const voice = 'voice' in value ? value.voice : undefined;
       if (voice !== undefined && (typeof voice !== 'string' || !GEMINI_VOICES.has(voice) || (selected !== 'gemini' && selected !== 'gemini-lite'))) {
