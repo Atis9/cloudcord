@@ -51,6 +51,29 @@ func TestVoiceSpeakerSelectionIsScopedToActiveSession(t *testing.T) {
 	}
 }
 
+func TestModelSelectionIsScopedToActiveSession(t *testing.T) {
+	b := &Bot{sessions: map[snowflake.ID]*active{
+		1: {speech: &session.GuildSession{}},
+		2: {speech: &session.GuildSession{}},
+	}}
+	if result := b.model(3, "gemini", true); !strings.Contains(result, "/join") {
+		t.Fatal("model selection should require an active session")
+	}
+	b.speaker(1, "Kore", true)
+	b.model(1, "gemini", true)
+	b.model(1, "invalid", true)
+	if result := b.model(1, "", false); !strings.Contains(result, "Gemini Flash TTS") {
+		t.Fatalf("selected model was not reported: %s", result)
+	}
+	if b.sessions[1].speech.Engine() != "gemini" || b.sessions[1].speech.Speaker() != "Kore" || b.sessions[2].speech.Engine() != "" {
+		t.Fatal("model choice changed another guild or the selected voice")
+	}
+	b.model(1, "gemini-lite", true)
+	if b.sessions[1].speech.Engine() != "gemini-lite" {
+		t.Fatal("could not switch back to Lite")
+	}
+}
+
 func TestCommandRegistrationClearsAdminRequirement(t *testing.T) {
 	for _, command := range commandDefinitions() {
 		encoded, err := json.Marshal(command)

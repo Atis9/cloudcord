@@ -12,6 +12,7 @@ type SpeechRequest struct {
 	Text     string `json:"text"`
 	Language string `json:"language"`
 	Voice    string `json:"voice,omitempty"`
+	Engine   string `json:"engine,omitempty"`
 }
 type AudioResult struct {
 	MIME      string

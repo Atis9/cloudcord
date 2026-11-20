@@ -150,11 +150,11 @@ func TestFIFOContinuesAfterFailure(t *testing.T) {
 	}
 }
 
-func TestSpeakerIsCapturedWhenQueued(t *testing.T) {
+func TestSpeakerAndEngineAreCapturedWhenQueued(t *testing.T) {
 	calls := make(chan string, 3)
 	release := make(chan struct{})
 	p := providerFunc(func(ctx context.Context, req tts.SpeechRequest) (tts.AudioResult, error) {
-		calls <- req.Text + ":" + req.Voice
+		calls <- req.Text + ":" + req.Voice + ":" + req.Engine
 		if req.Text == "first" {
 			select {
 			case <-release:
@@ -167,15 +167,17 @@ func TestSpeakerIsCapturedWhenQueued(t *testing.T) {
 	s := New(context.Background(), "guild", "text", "voice", p, converter{}, playerFunc(func(context.Context, [][]byte) error { return nil }))
 	defer s.Stop()
 	s.Enqueue("first")
-	if got := wait(t, calls); got != "first:" {
+	if got := wait(t, calls); got != "first::" {
 		t.Fatalf("default speaker request: %q", got)
 	}
 	s.SetSpeaker("Kore")
+	s.SetEngine("gemini")
 	s.Enqueue("queued")
 	s.SetSpeaker("Sulafat")
+	s.SetEngine("gemini-lite")
 	s.Enqueue("new")
 	close(release)
-	for _, want := range []string{"queued:Kore", "new:Sulafat"} {
+	for _, want := range []string{"queued:Kore:gemini", "new:Sulafat:gemini-lite"} {
 		if got := wait(t, calls); got != want {
 			t.Fatalf("got %q, want %q", got, want)
 		}
