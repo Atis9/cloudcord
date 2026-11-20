@@ -80,7 +80,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	stream, e := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader(data))})
+	stream, e := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader(data))}, 1)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -88,7 +88,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(frames) < 40 || len(frames) > 45 {
+	if len(frames) < 49 || len(frames) > 53 {
 		t.Fatalf("unexpected duration: %d frames", len(frames))
 	}
 	for _, f := range frames {
@@ -97,7 +97,7 @@ func TestFFmpegRealPipeline(t *testing.T) {
 		}
 	}
 	// Invalid MP3 must be reported instead of yielding empty successful playback.
-	stream, e = NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader([]byte("invalid")))})
+	stream, e = NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader([]byte("invalid")))}, 1)
 	if e == nil {
 		_, e = collect(ctx, stream)
 	}
@@ -113,7 +113,7 @@ func TestFFmpegCancellationReapsProcess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	stream, e := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader([]byte("fixture")))})
+	stream, e := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: io.NopCloser(bytes.NewReader([]byte("fixture")))}, 1)
 	if e == nil {
 		_, e = collect(ctx, stream)
 	}
@@ -136,13 +136,13 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(data))})
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(data))}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	frames, err := collect(ctx, stream)
-	// One second at 1.2× is about 42 packets of 20 ms each.
-	if err != nil || len(frames) < 40 || len(frames) > 45 {
+	// One second at 1× is about 50 packets of 20 ms each.
+	if err != nil || len(frames) < 49 || len(frames) > 53 {
 		t.Fatalf("WAV conversion: %d frames, %v", len(frames), err)
 	}
 	for _, frame := range frames {
@@ -152,6 +152,25 @@ func TestFFmpegRealWAVPipeline(t *testing.T) {
 		// 64,000 bits/s * 20 ms / 8 = 160 bytes of Opus payload.
 		if len(frame) > 160 {
 			t.Fatalf("Opus payload exceeds 64 kbps: %d bytes in 20 ms", len(frame))
+		}
+	}
+}
+
+func TestFFmpegPlaybackSpeeds(t *testing.T) {
+	path := levelFFmpegPath(t)
+	for _, speed := range []float64{0.5, 1, 2} {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		wav := levelWAV(1, func(i int) float64 { return 0.1 * math.Sin(2*math.Pi*440*float64(i)/48000) })
+		stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(wav))}, speed)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		frames, err := collect(ctx, stream)
+		cancel()
+		want := 50 / speed
+		if err != nil || math.Abs(float64(len(frames))-want) > 3 {
+			t.Fatalf("speed %g: got %d frames, want about %g: %v", speed, len(frames), want, err)
 		}
 	}
 }
@@ -184,7 +203,7 @@ func TestFFmpegStartsBeforeMP3InputEnds(t *testing.T) {
 	}
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: reader})
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/mpeg", Stream: reader}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +265,7 @@ func TestFFmpegStartsBeforeStreamingWAVEnds(t *testing.T) {
 		_, err := writer.Write(wav[boundary:])
 		writer.CloseWithError(err)
 	}()
-	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader})
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +278,7 @@ func TestFFmpegStartsBeforeStreamingWAVEnds(t *testing.T) {
 	}
 	close(continueAudio)
 	frames, err := collect(ctx, stream)
-	if err != nil || len(frames)+1 < 80 || len(frames)+1 > 86 {
+	if err != nil || len(frames)+1 < 98 || len(frames)+1 > 103 {
 		t.Fatalf("expected both WAV segments, got %d Opus packets: %v", len(frames)+1, err)
 	}
 }

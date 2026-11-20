@@ -20,7 +20,21 @@ func (f providerFunc) Synthesize(c context.Context, r tts.SpeechRequest) (tts.Au
 
 type converter struct{}
 
-func (converter) Convert(ctx context.Context, a tts.AudioResult) (audio.FrameStream, error) {
+func TestQueuedPlaybackSpeed(t *testing.T) {
+	s := &GuildSession{ctx: t.Context(), queue: make(chan utterance, QueueLimit)}
+	s.Enqueue("normal")
+	s.SetSpeed(0.5)
+	s.Enqueue("slow")
+	s.SetSpeed(2)
+	s.Enqueue("fast")
+	for _, want := range []float64{1, 0.5, 2} {
+		if got := (<-s.queue).speed; got != want {
+			t.Fatalf("queued speed = %g, want %g", got, want)
+		}
+	}
+}
+
+func (converter) Convert(ctx context.Context, a tts.AudioResult, speed float64) (audio.FrameStream, error) {
 	defer a.Stream.Close()
 	b, e := io.ReadAll(a.Stream)
 	return &testFrames{data: [][]byte{b}}, e

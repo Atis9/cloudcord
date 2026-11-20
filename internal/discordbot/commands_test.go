@@ -2,6 +2,7 @@ package discordbot
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -11,6 +12,27 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 )
+
+func TestPlaybackSpeedCommand(t *testing.T) {
+	b := &Bot{sessions: map[snowflake.ID]*active{
+		1: {speech: &session.GuildSession{}},
+		2: {speech: &session.GuildSession{}},
+	}}
+	if result := b.speed(3, 1.5, true); !strings.Contains(result, "/join") {
+		t.Fatal("speed selection should require an active session")
+	}
+	if result := b.speed(1, 0, false); !strings.Contains(result, "1倍") {
+		t.Fatal("default playback speed should be normal")
+	}
+	b.speed(1, 0.5, true)
+	b.speed(2, 2, true)
+	for _, value := range []float64{0, 0.49, 2.01, math.NaN(), math.Inf(1)} {
+		b.speed(1, value, true)
+	}
+	if b.sessions[1].speech.Speed() != 0.5 || b.sessions[2].speech.Speed() != 2 {
+		t.Fatal("invalid speed or another guild changed the session speed")
+	}
+}
 
 func TestVoiceSpeakerSelectionIsScopedToActiveSession(t *testing.T) {
 	const first, second snowflake.ID = 1, 2

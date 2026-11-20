@@ -39,7 +39,7 @@ func TestFFmpegCancellationDuringWAVHeader(t *testing.T) {
 	defer cancel()
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	_, err := NewFFmpeg("").Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader})
+	_, err := NewFFmpeg("").Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: reader}, 1)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected header read to stop on cancellation, got %v", err)
 	}

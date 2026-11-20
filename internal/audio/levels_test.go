@@ -76,9 +76,9 @@ func TestFFmpegDoesNotBoostQuietAudioBetweenPhrases(t *testing.T) {
 		}
 		return amplitude * math.Sin(2*math.Pi*440*float64(i)/48000)
 	}))
-	// Sample the middle of each region after the 1.2x tempo adjustment.
+	// Sample the middle of each region at normal playback speed.
 	speech, _ := sampleLevels(samples[14400:24000])
-	quiet, _ := sampleLevels(samples[52800:67200])
+	quiet, _ := sampleLevels(samples[60000:72000])
 	if speech < 0.1 || quiet > 0.02 {
 		t.Fatalf("expected normalized speech and a quiet pause, got RMS %g and %g", speech, quiet)
 	}
@@ -127,7 +127,7 @@ func levelWAV(seconds float64, sample func(int) float64) []byte {
 
 func convertAndDecode(t *testing.T, ctx context.Context, path string, wav []byte) []float32 {
 	t.Helper()
-	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(wav))})
+	stream, err := NewFFmpeg(path).Convert(ctx, tts.AudioResult{MIME: "audio/wav", Stream: io.NopCloser(bytes.NewReader(wav))}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
