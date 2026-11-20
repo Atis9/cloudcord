@@ -20,6 +20,45 @@ func (f providerFunc) Synthesize(c context.Context, r tts.SpeechRequest) (tts.Au
 
 type converter struct{}
 
+type speedConverter struct{ speeds chan float64 }
+
+func (c speedConverter) Convert(ctx context.Context, a tts.AudioResult, speed float64) (audio.FrameStream, error) {
+	c.speeds <- speed
+	return (converter{}).Convert(ctx, a, speed)
+}
+
+func TestPlaybackReceivesQueuedSpeed(t *testing.T) {
+	speeds := make(chan float64, 3)
+	release := make(chan struct{})
+	p := providerFunc(func(ctx context.Context, req tts.SpeechRequest) (tts.AudioResult, error) {
+		select {
+		case <-release:
+			return result(req.Text), nil
+		case <-ctx.Done():
+			return tts.AudioResult{}, ctx.Err()
+		}
+	})
+	s := New(t.Context(), "guild", "text", "voice", p, speedConverter{speeds}, playerFunc(func(context.Context, [][]byte) error { return nil }))
+	defer s.Stop()
+	s.Enqueue("normal")
+	s.SetSpeed(1.2)
+	s.Enqueue("faster")
+	s.SetSpeed(2)
+	s.Enqueue("fastest")
+	s.SetSpeed(0.5)
+	close(release)
+	for _, want := range []float64{1, 1.2, 2} {
+		select {
+		case got := <-speeds:
+			if got != want {
+				t.Fatalf("converter received %g, want queued speed %g", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for conversion")
+		}
+	}
+}
+
 func TestQueuedPlaybackSpeed(t *testing.T) {
 	s := &GuildSession{ctx: t.Context(), queue: make(chan utterance, QueueLimit)}
 	s.Enqueue("normal")
