@@ -71,7 +71,17 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 	return b, nil
 }
 func commandDefinitions() []discord.ApplicationCommandCreate {
+	minSpeed, maxSpeed := 0.5, 2.0
 	return []discord.ApplicationCommandCreate{
+		discord.SlashCommandCreate{
+			Name: "speed", Description: "読み上げ速度を確認・変更",
+			DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](),
+			Contexts:                 []discord.InteractionContextType{discord.InteractionContextTypeGuild},
+			Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionFloat{
+				Name: "rate", Description: "再生速度（0.5〜2.0倍、省略時は現在の設定を表示）",
+				MinValue: &minSpeed, MaxValue: &maxSpeed,
+			}},
+		},
 		discord.SlashCommandCreate{Name: "join", Description: "参加中のボイスチャンネルで読み上げを開始", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}, Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionChannel{Name: "text_channel", Description: "読み上げ対象（省略時は現在のテキストチャンネル）", ChannelTypes: []discord.ChannelType{discord.ChannelTypeGuildText}}}},
 		discord.SlashCommandCreate{Name: "leave", Description: "読み上げを停止して退出", DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](), Contexts: []discord.InteractionContextType{discord.InteractionContextTypeGuild}},
 		discord.SlashCommandCreate{
@@ -108,7 +118,7 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		return
 	}
 	name := data.CommandName()
-	if name != "join" && name != "leave" && name != "voice" {
+	if name != "join" && name != "leave" && name != "voice" && name != "speed" {
 		return
 	}
 	if b.ctx.Err() != nil {
@@ -147,6 +157,9 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			case "voice":
 				speaker, present := data.OptString("speaker")
 				result = b.speaker(*e.GuildID(), speaker, present)
+			case "speed":
+				rate, present := data.OptFloat("rate")
+				result = b.speed(*e.GuildID(), rate, present)
 			}
 		}
 		reply, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -155,6 +168,23 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			slog.Warn("interaction_response_failed")
 		}
 	}()
+}
+
+// Caller holds the guild command lock and has passed controlError.
+func (b *Bot) speed(guild snowflake.ID, rate float64, present bool) string {
+	b.mu.Lock()
+	current := b.sessions[guild]
+	b.mu.Unlock()
+	if current == nil {
+		return "`/join` で読み上げを開始してから実行してください。"
+	}
+	if !present {
+		return fmt.Sprintf("現在の再生速度は **%g倍** です。", current.speech.Speed())
+	}
+	if !current.speech.SetSpeed(rate) {
+		return "再生速度は0.5〜2.0倍で指定してください。"
+	}
+	return fmt.Sprintf("これから投稿されるメッセージを **%g倍** で読み上げます。", rate)
 }
 
 // Caller holds the guild command lock.

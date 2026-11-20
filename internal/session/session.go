@@ -19,6 +19,7 @@ const QueueLimit = 20
 type utterance struct {
 	text     string
 	speaker  string
+	speed    float64
 	enqueued time.Time
 }
 
@@ -42,6 +43,7 @@ type GuildSession struct {
 	mu                                     sync.Mutex
 	closed                                 bool
 	speaker                                string
+	speed                                  float64
 	waiting                                int // Includes the next post while it is being prefetched.
 	Dropped                                atomic.Uint64
 }
@@ -64,7 +66,7 @@ func (s *GuildSession) Enqueue(text string) bool {
 		return false
 	}
 	// The channel cannot be full when the total waiting count is below its capacity.
-	s.queue <- utterance{text: text, speaker: s.speaker, enqueued: time.Now()}
+	s.queue <- utterance{text: text, speaker: s.speaker, speed: s.playbackSpeed(), enqueued: time.Now()}
 	s.waiting++
 	return true
 }
@@ -78,6 +80,30 @@ func (s *GuildSession) SetSpeaker(speaker string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.speaker = speaker
+}
+
+// Caller holds s.mu.
+func (s *GuildSession) playbackSpeed() float64 {
+	if s.speed == 0 {
+		return 1
+	}
+	return s.speed
+}
+
+func (s *GuildSession) Speed() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.playbackSpeed()
+}
+
+func (s *GuildSession) SetSpeed(speed float64) bool {
+	if !(speed >= 0.5 && speed <= 2) {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.speed = speed
+	return true
 }
 
 func (s *GuildSession) Stop() {
@@ -203,7 +229,7 @@ func (s *GuildSession) playUtterance(ctx context.Context, next *nextSpeech, star
 	if err != nil {
 		return err
 	}
-	frames, err := c.Convert(ctx, result)
+	frames, err := c.Convert(ctx, result, next.job.speed)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"strconv"
 	"sync"
 
 	"cloudcord/internal/tts"
@@ -15,7 +16,7 @@ type FrameStream interface {
 	Close() error
 }
 type Converter interface {
-	Convert(context.Context, tts.AudioResult) (FrameStream, error)
+	Convert(context.Context, tts.AudioResult, float64) (FrameStream, error)
 }
 type FFmpeg struct {
 	Path  string
@@ -24,14 +25,18 @@ type FFmpeg struct {
 
 // Short normalization windows keep streaming startup bounded. Limit gain to 20 dB,
 // avoid boosting breaths between phrases, and tame strong sibilants before limiting.
-const speechFilter = "atempo=1.2," +
-	"dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.015," +
+const speechFilter = "dynaudnorm=framelen=50:gausssize=5:peak=0.9:maxgain=10:targetrms=0.15:altboundary=1:threshold=0.015," +
 	"acompressor=threshold=0.25:ratio=3:attack=5:release=100," +
 	"deesser=i=0.28:m=0.85," +
 	"alimiter=limit=0.89:level=0:latency=1"
 
 func NewFFmpeg(path string) *FFmpeg { return &FFmpeg{Path: path, slots: make(chan struct{}, 1)} }
-func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStream, error) {
+func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult, speed float64) (FrameStream, error) {
+	if !(speed >= 0.5 && speed <= 2) {
+		input.Stream.Close()
+		return nil, errors.New("playback speed must be between 0.5 and 2")
+	}
+	filter := "atempo=" + strconv.FormatFloat(speed, 'f', -1, 64) + "," + speechFilter
 	format := "mp3"
 	switch input.MIME {
 	case "audio/mpeg":
@@ -68,7 +73,7 @@ func (f *FFmpeg) Convert(ctx context.Context, input tts.AudioResult) (FrameStrea
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1"}
 	args = append(args, inputArgs...)
 	// One Opus packet per Ogg page + flush prevents the default one-second page wait.
-	args = append(args, "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", speechFilter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "audio", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
+	args = append(args, "-i", "pipe:0", "-map", "0:a:0", "-vn", "-t", "60", "-af", filter, "-ar", "48000", "-ac", "2", "-c:a", "libopus", "-b:a", "64k", "-vbr", "off", "-frame_duration", "20", "-application", "audio", "-threads", "1", "-f", "ogg", "-page_duration", "1", "-flush_packets", "1", "pipe:1")
 	cmd := exec.CommandContext(child, f.Path, args...)
 	cmd.Stdin = source
 	cmd.Stderr = io.Discard
