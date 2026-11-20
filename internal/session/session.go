@@ -247,12 +247,13 @@ func (s *GuildSession) playUtterance(ctx context.Context, next *nextSpeech, star
 	if err != nil {
 		return err
 	}
+	slog.Info("speech_converting", "guild_id", s.GuildID, "request_id", result.RequestID, "speed", next.job.speed)
 	frames, err := c.Convert(ctx, result, next.job.speed)
 	if err != nil {
 		return err
 	}
 	err = player.Play(ctx, frames, func() {
-		slog.Info("speech_started", "guild_id", s.GuildID, "request_id", result.RequestID, "queue_wait_ms", started.Sub(next.job.enqueued).Milliseconds(), "first_packet_ms", time.Since(next.job.enqueued).Milliseconds(), "pipeline_start_ms", time.Since(started).Milliseconds(), "prefetched", next.prefetched)
+		slog.Info("speech_started", "guild_id", s.GuildID, "request_id", result.RequestID, "speed", next.job.speed, "queue_wait_ms", started.Sub(next.job.enqueued).Milliseconds(), "first_packet_ms", time.Since(next.job.enqueued).Milliseconds(), "pipeline_start_ms", time.Since(started).Milliseconds(), "prefetched", next.prefetched)
 		onStart()
 	})
 	closeErr := frames.Close()

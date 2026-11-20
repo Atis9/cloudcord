@@ -165,11 +165,13 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 	if b.ctx.Err() != nil {
 		return
 	}
+	slog.Info("command_received", "command", name)
 	if e.GuildID() == nil || e.Member() == nil {
 		_ = e.CreateMessage(discord.MessageCreate{Content: "サーバー内で実行してください。"})
 		return
 	}
 	if err := e.DeferCreateMessage(false); err != nil {
+		slog.Warn("command_ack_failed", "command", name)
 		return
 	}
 	b.mu.Lock()
@@ -253,11 +255,13 @@ func (b *Bot) speed(guild snowflake.ID, rate float64, present bool) string {
 		return "`/join` で読み上げを開始してから実行してください。"
 	}
 	if !present {
+		slog.Info("playback_speed_current", "guild_id", guild.String(), "speed", current.speech.Speed())
 		return fmt.Sprintf("現在の再生速度は **%g倍** です。", current.speech.Speed())
 	}
 	if !current.speech.SetSpeed(rate) {
 		return "再生速度は0.5〜2.0倍で指定してください。"
 	}
+	slog.Info("playback_speed_changed", "guild_id", guild.String(), "speed", rate)
 	return fmt.Sprintf("これから投稿されるメッセージを **%g倍** で読み上げます。", rate)
 }
 

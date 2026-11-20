@@ -38,6 +38,8 @@ Workerのログには本文・音声URL・認証情報を含めない。Gateway�
 
 Botで連続する音声パケットの送信処理開始が40ms以上空いた場合、`voice_packet_gaps` に回数、送信開始から最初に間隔が空くまでの時間、最大間隔を記録する。
 
+Slash Command の受付は `command_received`、速度変更は `playback_speed_changed` に記録する。音声変換開始の `speech_converting` と再生開始の `speech_started` の `speed` には、その投稿に適用した速度を記録する。
+
 ## 費用
 
 音声生成はAI GatewayのUnified Billingの前払いクレジットから支払う。テキスト入力と生成した音声に対してトークン単位で課金される。Bot側の話速変更は合成後に行う。最新料金と残高はCloudflareのダッシュボードで確認する。
