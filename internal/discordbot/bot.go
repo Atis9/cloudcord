@@ -24,10 +24,11 @@ import (
 )
 
 type active struct {
-	speech     *session.GuildSession
-	conn       voice.Conn
-	recovering bool
-	emptyTimer *time.Timer
+	speech       *session.GuildSession
+	conn         voice.Conn
+	recovering   bool
+	emptyTimer   *time.Timer
+	voiceMenuKey string
 }
 type Bot struct {
 	Client    *bot.Client
@@ -43,9 +44,36 @@ type Bot struct {
 }
 
 var speakerChoices = []discord.ApplicationCommandOptionChoiceString{
-	{Name: "Sulafat", Value: "Sulafat"},
-	{Name: "Vindemiatrix", Value: "Vindemiatrix"},
+	{Name: "Achernar", Value: "Achernar"},
+	{Name: "Achird", Value: "Achird"},
+	{Name: "Algenib", Value: "Algenib"},
+	{Name: "Algieba", Value: "Algieba"},
+	{Name: "Alnilam", Value: "Alnilam"},
+	{Name: "Aoede", Value: "Aoede"},
+	{Name: "Autonoe", Value: "Autonoe"},
+	{Name: "Callirrhoe", Value: "Callirrhoe"},
+	{Name: "Charon", Value: "Charon"},
+	{Name: "Despina", Value: "Despina"},
+	{Name: "Enceladus", Value: "Enceladus"},
+	{Name: "Erinome", Value: "Erinome"},
+	{Name: "Fenrir", Value: "Fenrir"},
+	{Name: "Gacrux", Value: "Gacrux"},
+	{Name: "Iapetus", Value: "Iapetus"},
 	{Name: "Kore", Value: "Kore"},
+	{Name: "Laomedeia", Value: "Laomedeia"},
+	{Name: "Leda", Value: "Leda"},
+	{Name: "Orus", Value: "Orus"},
+	{Name: "Puck", Value: "Puck"},
+	{Name: "Pulcherrima", Value: "Pulcherrima"},
+	{Name: "Rasalgethi", Value: "Rasalgethi"},
+	{Name: "Sadachbia", Value: "Sadachbia"},
+	{Name: "Sadaltager", Value: "Sadaltager"},
+	{Name: "Schedar", Value: "Schedar"},
+	{Name: "Sulafat", Value: "Sulafat"},
+	{Name: "Umbriel", Value: "Umbriel"},
+	{Name: "Vindemiatrix", Value: "Vindemiatrix"},
+	{Name: "Zephyr", Value: "Zephyr"},
+	{Name: "Zubenelgenubi", Value: "Zubenelgenubi"},
 }
 
 var engineChoices = []discord.ApplicationCommandOptionChoiceString{
@@ -65,7 +93,7 @@ func New(ctx context.Context, token string, p tts.Provider, c audio.Converter) (
 		),
 		bot.WithCacheConfigOpts(cache.WithCaches(cache.FlagGuilds, cache.FlagChannels, cache.FlagRoles, cache.FlagVoiceStates)),
 		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(golibdave.NewSession), voice.WithConnCreateFunc(b.createVoiceConn)),
-		bot.WithEventListenerFunc(b.command), bot.WithEventListenerFunc(b.message), bot.WithEventListenerFunc(b.voiceState),
+		bot.WithEventListenerFunc(b.voiceSelection), bot.WithEventListenerFunc(b.command), bot.WithEventListenerFunc(b.message), bot.WithEventListenerFunc(b.voiceState),
 	)
 	if err != nil {
 		cancel()
@@ -102,7 +130,7 @@ func commandDefinitions() []discord.ApplicationCommandCreate {
 			DefaultMemberPermissions: omit.NewNilPtr[discord.Permissions](),
 			Contexts:                 []discord.InteractionContextType{discord.InteractionContextTypeGuild},
 			Options: []discord.ApplicationCommandOption{discord.ApplicationCommandOptionString{
-				Name: "speaker", Description: "話者（省略すると現在の設定を表示）", Choices: speakerChoices,
+				Name: "speaker", Description: "話者名（省略すると全話者の選択メニューを表示）",
 			}},
 		},
 	}
@@ -138,10 +166,10 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		return
 	}
 	if e.GuildID() == nil || e.Member() == nil {
-		_ = e.CreateMessage(discord.MessageCreate{Content: "サーバー内で実行してください。", Flags: discord.MessageFlagEphemeral})
+		_ = e.CreateMessage(discord.MessageCreate{Content: "サーバー内で実行してください。"})
 		return
 	}
-	if err := e.DeferCreateMessage(true); err != nil {
+	if err := e.DeferCreateMessage(false); err != nil {
 		return
 	}
 	b.mu.Lock()
@@ -157,6 +185,7 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		lock.Lock()
 		defer lock.Unlock()
 		result := "読み上げを停止しました。"
+		var components []discord.LayoutComponent
 		if b.ctx.Err() != nil {
 			result = "Bot は停止中です。"
 		} else if reason := b.controlError(*e.GuildID(), e.User().ID); reason != "" {
@@ -170,6 +199,7 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 			case "voice":
 				speaker, present := data.OptString("speaker")
 				result = b.speaker(*e.GuildID(), speaker, present)
+				components = b.voiceMenus(*e.GuildID())
 			case "speed":
 				rate, present := data.OptFloat("rate")
 				result = b.speed(*e.GuildID(), rate, present)
@@ -180,7 +210,7 @@ func (b *Bot) command(e *events.ApplicationCommandInteractionCreate) {
 		}
 		reply, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, err := b.Client.Rest.UpdateInteractionResponse(e.ApplicationID(), e.Token(), discord.MessageUpdate{}.WithContent(result), rest.WithCtx(reply)); err != nil {
+		if _, err := b.Client.Rest.UpdateInteractionResponse(e.ApplicationID(), e.Token(), discord.MessageUpdate{}.WithContent(result).WithComponents(components...), rest.WithCtx(reply)); err != nil {
 			slog.Warn("interaction_response_failed")
 		}
 	}()

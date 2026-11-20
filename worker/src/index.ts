@@ -18,7 +18,7 @@ export interface Env {
   GROK_VOICE?: string;
 }
 const MAX_AUDIO = 5 * 1024 * 1024;
-const GEMINI_VOICES = new Set(['Sulafat', 'Vindemiatrix', 'Kore']);
+const GEMINI_VOICES = new Set(['Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi']);
 class APIError extends Error {
   status: number;
   code: string;
